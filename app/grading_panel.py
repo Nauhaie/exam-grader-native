@@ -1,7 +1,7 @@
 """Right panel: grade-entry spreadsheet."""
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLineEdit,
     QPushButton,
+    QTableView,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
 from models import GradingScheme, GradingSettings, Student, Subquestion
 
 _HEADER_ROWS = 3        # exercise row · subquestion row · max-points row
+_FROZEN_COLS = 2        # Student, Number columns are always visible
 _MIN_ROUNDING_STEP = 0.001   # prevents division-by-zero in grade rounding
 
 # Header background colours
@@ -83,6 +85,49 @@ class GradingPanel(QWidget):
         self._table.itemChanged.connect(self._on_item_changed)
         self._table.cellClicked.connect(self._on_cell_clicked)
         layout.addWidget(self._table)
+
+        # ── Frozen overlays (sticky header rows + Student/Number columns) ─────
+        self._fz_corner = QTableView(self._table)
+        self._fz_header = QTableView(self._table)
+        self._fz_left   = QTableView(self._table)
+
+        for fz in (self._fz_corner, self._fz_header, self._fz_left):
+            fz.setModel(self._table.model())
+            fz.horizontalHeader().setVisible(False)
+            fz.horizontalHeader().setSectionResizeMode(
+                QHeaderView.ResizeMode.Fixed)
+            fz.verticalHeader().setVisible(False)
+            fz.verticalHeader().setSectionResizeMode(
+                QHeaderView.ResizeMode.Fixed)
+            fz.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            fz.setHorizontalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            fz.setVerticalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            fz.setShowGrid(True)
+            fz.setSelectionMode(
+                QAbstractItemView.SelectionMode.NoSelection)
+            fz.setEditTriggers(
+                QAbstractItemView.EditTrigger.NoEditTriggers)
+            fz.setStyleSheet("QTableView { border: none; }")
+            fz.hide()
+
+        # Click on frozen left selects the student
+        self._fz_left.clicked.connect(
+            lambda idx: self._on_cell_clicked(idx.row(), idx.column()))
+
+        # Sync scrolling: main table → frozen overlays
+        self._table.horizontalScrollBar().valueChanged.connect(
+            self._fz_header.horizontalScrollBar().setValue)
+        self._table.verticalScrollBar().valueChanged.connect(
+            self._fz_left.verticalScrollBar().setValue)
+
+        # Re-sync column/row sizes when the main table resizes sections
+        self._table.horizontalHeader().sectionResized.connect(
+            self._on_frozen_section_resized)
+
+        # Re-position overlays when the viewport resizes
+        self._table.viewport().installEventFilter(self)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -216,6 +261,8 @@ class GradingPanel(QWidget):
             self._table.blockSignals(False)
             self._rebuilding = False
         self._apply_highlight()
+        # Defer frozen overlay update so column widths are computed first
+        QTimer.singleShot(0, self._update_frozen_geometry)
 
     def _build_table_contents(self):
         filtered = self._filtered_students()
@@ -535,3 +582,119 @@ class GradingPanel(QWidget):
         if (self._current_student is None
                 or student.student_number != self._current_student.student_number):
             self.student_selected.emit(student)
+
+    # ── Frozen overlay helpers (sticky header rows + Student/Number cols) ─────
+
+    def eventFilter(self, obj, event):
+        if obj is self._table.viewport() and event.type() == QEvent.Type.Resize:
+            QTimer.singleShot(0, self._update_frozen_geometry)
+        return super().eventFilter(obj, event)
+
+    def _on_frozen_section_resized(self, idx, _old, new):
+        for fz in (self._fz_corner, self._fz_header, self._fz_left):
+            fz.setColumnWidth(idx, new)
+        self._reposition_frozen()
+
+    def _update_frozen_geometry(self):
+        """Set up frozen overlays: hide/show cols/rows, sync sizes, position."""
+        cc = self._table.columnCount()
+        rc = self._table.rowCount()
+        if cc < _FROZEN_COLS or rc < _HEADER_ROWS:
+            for fz in (self._fz_corner, self._fz_header, self._fz_left):
+                fz.hide()
+            return
+
+        # Force column width computation
+        self._table.resizeColumnsToContents()
+
+        # Sync column widths and row heights to overlays
+        for c in range(cc):
+            w = self._table.columnWidth(c)
+            for fz in (self._fz_corner, self._fz_header, self._fz_left):
+                fz.setColumnWidth(c, w)
+        for r in range(rc):
+            h = self._table.rowHeight(r)
+            for fz in (self._fz_corner, self._fz_header, self._fz_left):
+                fz.setRowHeight(r, h)
+
+        # Corner: show only frozen cols and header rows
+        for c in range(cc):
+            self._fz_corner.setColumnHidden(c, c >= _FROZEN_COLS)
+        for r in range(rc):
+            self._fz_corner.setRowHidden(r, r >= _HEADER_ROWS)
+
+        # Header: hide frozen cols (covered by corner), show header rows only
+        for c in range(cc):
+            self._fz_header.setColumnHidden(c, c < _FROZEN_COLS)
+        for r in range(rc):
+            self._fz_header.setRowHidden(r, r >= _HEADER_ROWS)
+
+        # Left: show frozen cols, hide header rows (covered by corner)
+        for c in range(cc):
+            self._fz_left.setColumnHidden(c, c >= _FROZEN_COLS)
+        for r in range(rc):
+            self._fz_left.setRowHidden(r, r < _HEADER_ROWS)
+
+        # Duplicate relevant spans on overlays
+        self._set_frozen_spans()
+
+        # Position, show, and bring to front
+        self._reposition_frozen()
+        for fz in (self._fz_corner, self._fz_header, self._fz_left):
+            fz.show()
+            fz.raise_()
+
+        # Sync initial scroll positions
+        self._fz_header.horizontalScrollBar().setValue(
+            self._table.horizontalScrollBar().value())
+        self._fz_left.verticalScrollBar().setValue(
+            self._table.verticalScrollBar().value())
+
+    def _set_frozen_spans(self):
+        """Duplicate relevant cell spans on the frozen overlays."""
+        cc = self._table.columnCount()
+        extra_count = len(self._extra_field_names()) if self._show_extra else 0
+        sq_count = len(self._subquestions)
+        sq_start = _FROZEN_COLS + extra_count
+
+        # Corner: Student and Number each span all 3 header rows
+        self._fz_corner.clearSpans()
+        for c in range(_FROZEN_COLS):
+            self._fz_corner.setSpan(0, c, _HEADER_ROWS, 1)
+
+        # Header: replicate the same spans as the main table for header rows
+        self._fz_header.clearSpans()
+        # Fixed columns that span 3 header rows (extra fields, Total, Grade)
+        for c in range(_FROZEN_COLS, cc):
+            if c < sq_start or c >= sq_start + sq_count:
+                self._fz_header.setSpan(0, c, _HEADER_ROWS, 1)
+        # Exercise name spans in row 0
+        ex_groups: Dict[str, List[int]] = {}
+        for ci, ex_name in enumerate(self._exercises_for_sq):
+            ex_groups.setdefault(ex_name, []).append(ci)
+        seen: set = set()
+        for ci, ex_name in enumerate(self._exercises_for_sq):
+            if ex_name not in seen:
+                seen.add(ex_name)
+                span = len(ex_groups[ex_name])
+                self._fz_header.setSpan(0, sq_start + ci, 1, span)
+
+        # Left: no spans needed (only 2 plain-text columns)
+        self._fz_left.clearSpans()
+
+    def _reposition_frozen(self):
+        """Reposition frozen overlays based on current column/row sizes."""
+        cc = self._table.columnCount()
+        rc = self._table.rowCount()
+        if cc < _FROZEN_COLS or rc < _HEADER_ROWS:
+            return
+
+        frozen_w = sum(self._table.columnWidth(c) for c in range(_FROZEN_COLS))
+        frozen_h = sum(self._table.rowHeight(r) for r in range(_HEADER_ROWS))
+        vp = self._table.viewport()
+
+        self._fz_corner.setGeometry(0, 0, frozen_w, frozen_h)
+        self._fz_header.setGeometry(
+            frozen_w, 0, vp.width() - frozen_w, frozen_h)
+        self._fz_left.setGeometry(
+            0, frozen_h, frozen_w, vp.height() - frozen_h)
