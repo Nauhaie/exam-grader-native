@@ -17,10 +17,14 @@ from PySide6.QtGui import (
 from models import Annotation
 
 MARKER_RADIUS = 12          # pt at zoom 1 (≈ 4 mm on A4 long side)
+_CHECKMARK_RADIUS = 6       # half of MARKER_RADIUS — checkmarks/crosses are smaller
 _TEXT_FONT_PT = 9
 _TEXT_PAD = 3
 _RESIZE_HANDLE = 8          # side length (pt) of the resize-handle square
 _TEXT_WRAP_MAX_H = 10_000   # generous max-height for word-wrap bound calculation
+
+_RED    = QColor(204, 20, 20)    # colour for lines, arrows, circles
+_ORANGE = QColor(255, 140, 0)    # colour for tilde (~) annotation
 
 # Long side of A4 in PDF points (= pixels at 72 dpi, zoom 1.0).
 # Used as the reference length so annotation sizes are physically consistent
@@ -59,7 +63,7 @@ def draw_preview(
     x2, y2 = int(end[0] * w), int(end[1] * h)
 
     pen_w = max(1, round(2 * s))
-    pen = QPen(QColor("#1565C0"), pen_w, Qt.PenStyle.DashLine)
+    pen = QPen(_RED, pen_w, Qt.PenStyle.DashLine)
     painter.setPen(pen)
     if tool == "line":
         painter.drawLine(x1, y1, x2, y2)
@@ -73,7 +77,7 @@ def draw_preview(
     # Start-point dot
     dot_r = max(2, round(4 * s))
     painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(QColor("#1565C0"))
+    painter.setBrush(_RED)
     painter.drawEllipse(x1 - dot_r, y1 - dot_r, dot_r * 2, dot_r * 2)
     painter.end()
 
@@ -162,19 +166,29 @@ def _text_box_size(text: str, width_frac: Optional[float],
 
 def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: int):
     s = h / BASE_PAGE_HEIGHT          # scale factor relative to A4 long side
-    r = max(4, round(MARKER_RADIUS * s))
+    rc = max(2, round(_CHECKMARK_RADIUS * s))  # radius for checkmark / cross
     stroke = max(1, round(2 * s))     # general pen width
-    thick = max(1, round(3 * s))      # thicker pen for checkmark / cross
+    thick = max(1, round(2 * s))      # pen width for checkmark / cross
 
     if ann.type == "checkmark":
         painter.setPen(QPen(QColor("green"), thick))
-        painter.drawLine(cx - r, cy, cx - r // 3, cy + r)
-        painter.drawLine(cx - r // 3, cy + r, cx + r, cy - r)
+        painter.drawLine(cx - rc, cy, cx - rc // 3, cy + rc)
+        painter.drawLine(cx - rc // 3, cy + rc, cx + rc, cy - rc)
 
     elif ann.type == "cross":
         painter.setPen(QPen(QColor("red"), thick))
-        painter.drawLine(cx - r, cy - r, cx + r, cy + r)
-        painter.drawLine(cx + r, cy - r, cx - r, cy + r)
+        painter.drawLine(cx - rc, cy - rc, cx + rc, cy + rc)
+        painter.drawLine(cx + rc, cy - rc, cx - rc, cy + rc)
+
+    elif ann.type == "tilde":
+        font = QFont()
+        font.setPointSize(max(4, round(14 * s)))
+        font.setBold(True)
+        painter.setFont(font)
+        fm = QFontMetrics(font)
+        painter.setPen(QPen(_ORANGE, thick))
+        tw = fm.horizontalAdvance("~")
+        painter.drawText(cx - tw // 2, cy + fm.ascent() // 2, "~")
 
     elif ann.type == "text" and ann.text:
         font = QFont()
@@ -194,15 +208,15 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
         painter.fillRect(cx + bw - hs, cy + bh - hs, hs, hs, QColor(70, 130, 230, 200))
 
     elif ann.type == "line" and ann.x2 is not None and ann.y2 is not None:
-        painter.setPen(QPen(QColor("#1565C0"), stroke))
+        painter.setPen(QPen(_RED, stroke))
         painter.drawLine(cx, cy, int(ann.x2 * w), int(ann.y2 * h))
 
     elif ann.type == "arrow" and ann.x2 is not None and ann.y2 is not None:
-        painter.setPen(QPen(QColor("#1565C0"), stroke))
+        painter.setPen(QPen(_RED, stroke))
         _draw_arrow(painter, cx, cy, int(ann.x2 * w), int(ann.y2 * h), s)
 
     elif ann.type == "circle" and ann.x2 is not None and ann.y2 is not None:
-        painter.setPen(QPen(QColor("#1565C0"), stroke))
+        painter.setPen(QPen(_RED, stroke))
         radius = int(math.hypot(ann.x2 * w - cx, ann.y2 * h - cy))
         painter.drawEllipse(cx - radius, cy - radius, radius * 2, radius * 2)
 
@@ -224,7 +238,7 @@ def _draw_arrow(painter: QPainter, x1: int, y1: int, x2: int, y2: int,
                int(y2 - size * math.sin(angle + half))),
     ])
     old_brush = painter.brush()
-    painter.setBrush(QColor("#1565C0"))
+    painter.setBrush(_RED)
     painter.drawPolygon(pts)
     painter.setBrush(old_brush)
 

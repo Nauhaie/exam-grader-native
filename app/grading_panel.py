@@ -5,6 +5,8 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
+    QHBoxLayout,
     QHeaderView,
     QLineEdit,
     QTableWidget,
@@ -15,7 +17,14 @@ from PySide6.QtWidgets import (
 
 from models import GradingScheme, Student, Subquestion
 
-GRADE_SCALE = 20  # French 0–20 grading system
+GRADE_SCALE  = 20   # French 0–20 grading system
+_HEADER_ROWS = 3    # exercise row · subquestion row · max-points row
+
+# Header background colours
+_BG_EX   = QColor(180, 198, 230)   # exercise name row
+_BG_SQ   = QColor(210, 224, 245)   # subquestion name row
+_BG_MAX  = QColor(235, 242, 252)   # max-points row
+_BG_MISC = QColor(215, 215, 215)   # non-grade fixed columns (Student, Number, …)
 
 
 class GradingPanel(QWidget):
@@ -31,16 +40,26 @@ class GradingPanel(QWidget):
         self._subquestions: List[Subquestion] = []
         self._exercises_for_sq: List[str] = []   # parallel list: exercise name per subquestion
         self._rebuilding = False
+        self._show_extra = False   # whether extra CSV fields are shown
         # Track the last grading cell focused per student  {student_number: sq_name}
         self._last_focus: Dict[str, str] = {}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
 
+        # ── Top bar: search + extra-fields toggle ─────────────────────────────
+        top = QHBoxLayout()
         self._search = QLineEdit()
         self._search.setPlaceholderText("Filter students by name or number…")
         self._search.textChanged.connect(self._rebuild_table)
-        layout.addWidget(self._search)
+        top.addWidget(self._search)
+
+        self._extra_cb = QCheckBox("Extra fields")
+        self._extra_cb.setToolTip("Show/hide additional CSV columns")
+        self._extra_cb.setChecked(False)
+        self._extra_cb.toggled.connect(self._on_extra_toggled)
+        top.addWidget(self._extra_cb)
+        layout.addLayout(top)
 
         self._table = QTableWidget()
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -50,8 +69,8 @@ class GradingPanel(QWidget):
         )
         hdr = self._table.horizontalHeader()
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        hdr.setMinimumHeight(54)   # tall enough for 3-line headers
-        hdr.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        # The built-in single-row header is replaced by 3 data rows at the top
+        hdr.setVisible(False)
         self._table.verticalHeader().setVisible(False)
         self._table.itemChanged.connect(self._on_item_changed)
         self._table.cellClicked.connect(self._on_cell_clicked)
@@ -74,6 +93,22 @@ class GradingPanel(QWidget):
             for sq in ex.subquestions:
                 self._subquestions.append(sq)
                 self._exercises_for_sq.append(ex.name)
+        # Enable / disable the extra-fields checkbox based on data availability
+        self._extra_cb.setEnabled(bool(self._extra_field_names()))
+        self._rebuild_table()
+
+    # ── Internal ──────────────────────────────────────────────────────────────
+
+    def _extra_field_names(self) -> List[str]:
+        """Collect the union of all extra field names across all students (insertion-ordered)."""
+        seen: dict = {}
+        for s in self._students:
+            for k in s.extra_fields:
+                seen[k] = None
+        return list(seen)
+
+    def _on_extra_toggled(self, checked: bool):
+        self._show_extra = checked
         self._rebuild_table()
 
     def set_current_student(self, student: Optional[Student]):
@@ -87,19 +122,23 @@ class GradingPanel(QWidget):
         Otherwise focus the first grading column.
         """
         filtered = self._filtered_students()
-        row = next(
+        data_row = next(
             (i for i, s in enumerate(filtered) if s.student_number == student_number),
             -1,
         )
-        if row < 0 or not self._subquestions:
+        if data_row < 0 or not self._subquestions:
             return
+
+        extra_count = len(self._extra_field_names()) if self._show_extra else 0
+        sq_start = 2 + extra_count
+        row = _HEADER_ROWS + data_row
 
         last_sq = self._last_focus.get(student_number)
         if last_sq and any(sq.name == last_sq for sq in self._subquestions):
-            col = 2 + next(i for i, sq in enumerate(self._subquestions)
-                           if sq.name == last_sq)
+            col = sq_start + next(i for i, sq in enumerate(self._subquestions)
+                                  if sq.name == last_sq)
         else:
-            col = 2   # first grading column
+            col = sq_start   # first grading column
 
         self._table.setFocus()
         self._table.setCurrentCell(row, col)
@@ -122,6 +161,7 @@ class GradingPanel(QWidget):
             if text in s.last_name.lower()
             or text in s.first_name.lower()
             or text in s.student_number.lower()
+            or any(text in v.lower() for v in s.extra_fields.values())
         ]
 
     def _max_total(self) -> float:
@@ -148,29 +188,76 @@ class GradingPanel(QWidget):
     def _build_table_contents(self):
         filtered = self._filtered_students()
         sq_count = len(self._subquestions)
-        col_count = 2 + sq_count + 2   # Name, Number, subquestions, Total, Grade/20
-        self._table.setRowCount(len(filtered) + 1)   # +1 for average row
+        extra_names = self._extra_field_names() if self._show_extra else []
+        extra_count = len(extra_names)
+        # Layout: Name | Number | [extra…] | subquestions… | Total | Grade/20
+        sq_start = 2 + extra_count
+        col_count = sq_start + sq_count + 2
+        # _HEADER_ROWS frozen header rows + data rows + 1 average row
+        self._table.setRowCount(_HEADER_ROWS + len(filtered) + 1)
         self._table.setColumnCount(col_count)
 
-        # Column headers: "Exercise\nQuestion\n/max"
-        headers = ["Student", "Number"]
-        for ex_name, sq in zip(self._exercises_for_sq, self._subquestions):
-            headers.append(f"{ex_name}\n{sq.name}\n/{sq.max_points:g}")
-        headers += ["Total", "Grade /20"]
-        self._table.setHorizontalHeaderLabels(headers)
+        # ── Build the 3-row column header ─────────────────────────────────────
+        self._table.clearSpans()
 
+        def _hdr(text: str, bg: QColor, bold: bool = False) -> QTableWidgetItem:
+            it = QTableWidgetItem(text)
+            it.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            it.setBackground(bg)
+            it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if bold:
+                f = it.font(); f.setBold(True); it.setFont(f)
+            return it
+
+        # Fixed columns (Student, Number, extras, Total, Grade/20) span all 3 header rows
+        fixed_cols = list(range(2 + extra_count)) + [sq_start + sq_count, sq_start + sq_count + 1]
+        fixed_labels = ["Student", "Number"] + extra_names + ["Total", "Grade /20"]
+        for c, label in zip(fixed_cols, fixed_labels):
+            self._table.setSpan(0, c, _HEADER_ROWS, 1)
+            self._table.setItem(0, c, _hdr(label, _BG_MISC, bold=True))
+            for r in (1, 2):
+                self._table.setItem(r, c, _hdr("", _BG_MISC))
+
+        # Grade columns: group by exercise for row-0 spans
+        ex_groups: Dict[str, List[int]] = {}   # exercise name → list of sq col offsets
+        for ci, ex_name in enumerate(self._exercises_for_sq):
+            ex_groups.setdefault(ex_name, []).append(ci)
+
+        seen_ex: set = set()
+        for ci, (ex_name, sq) in enumerate(zip(self._exercises_for_sq, self._subquestions)):
+            col = sq_start + ci
+            # Row 0: exercise name, merged across all sqs of that exercise
+            if ex_name not in seen_ex:
+                seen_ex.add(ex_name)
+                span = len(ex_groups[ex_name])
+                self._table.setSpan(0, col, 1, span)
+                self._table.setItem(0, col, _hdr(ex_name, _BG_EX, bold=True))
+            # Row 1: subquestion name
+            self._table.setItem(1, col, _hdr(sq.name, _BG_SQ))
+            # Row 2: max points
+            self._table.setItem(2, col, _hdr(f"/{sq.max_points:g}", _BG_MAX))
+
+        # ── Data rows ─────────────────────────────────────────────────────────
         max_total = self._max_total()
         for row_idx, student in enumerate(filtered):
+            r = _HEADER_ROWS + row_idx
             sn = student.student_number
             sg = self._grades.get(sn, {})
 
             name_item = QTableWidgetItem(f"{student.last_name}, {student.first_name}")
             name_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-            self._table.setItem(row_idx, 0, name_item)
+            self._table.setItem(r, 0, name_item)
 
             num_item = QTableWidgetItem(sn)
             num_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-            self._table.setItem(row_idx, 1, num_item)
+            self._table.setItem(r, 1, num_item)
+
+            for ei, ename in enumerate(extra_names):
+                val = student.extra_fields.get(ename, "")
+                it = QTableWidgetItem(val)
+                it.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                it.setForeground(QColor(80, 80, 80))
+                self._table.setItem(r, 2 + ei, it)
 
             total = 0.0
             for col_idx, sq in enumerate(self._subquestions):
@@ -185,24 +272,26 @@ class GradingPanel(QWidget):
                     item.setBackground(color)
                 else:
                     item.setBackground(QColor(232, 232, 232))
-                self._table.setItem(row_idx, 2 + col_idx, item)
+                self._table.setItem(r, sq_start + col_idx, item)
 
             total_item = QTableWidgetItem(f"{total:.1f}")
             total_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             total_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._table.setItem(row_idx, 2 + sq_count, total_item)
+            self._table.setItem(r, sq_start + sq_count, total_item)
 
             grade = round((total / max_total) * GRADE_SCALE, 1) if max_total > 0 else 0.0
             grade_item = QTableWidgetItem(f"{grade:.1f}")
             grade_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             grade_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._table.setItem(row_idx, 2 + sq_count + 1, grade_item)
+            self._table.setItem(r, sq_start + sq_count + 1, grade_item)
 
         self._fill_average_row(filtered)
 
     def _fill_average_row(self, filtered: List[Student]):
         sq_count = len(self._subquestions)
-        avg_row = len(filtered)
+        extra_count = len(self._extra_field_names()) if self._show_extra else 0
+        sq_start = 2 + extra_count
+        avg_row = _HEADER_ROWS + len(filtered)
         max_total = self._max_total()
         included = [
             s for s in filtered
@@ -223,6 +312,8 @@ class GradingPanel(QWidget):
 
         self._table.setItem(avg_row, 0, _avg_item(f"Avg ({len(included)})"))
         self._table.setItem(avg_row, 1, _avg_item(""))
+        for ei in range(extra_count):
+            self._table.setItem(avg_row, 2 + ei, _avg_item(""))
         avg_total = 0.0
         for col_idx, sq in enumerate(self._subquestions):
             if included:
@@ -232,15 +323,15 @@ class GradingPanel(QWidget):
             else:
                 avg_val = 0.0
             avg_total += avg_val
-            self._table.setItem(avg_row, 2 + col_idx,
+            self._table.setItem(avg_row, sq_start + col_idx,
                                  _avg_item(f"{avg_val:.1f}" if included else ""))
-        self._table.setItem(avg_row, 2 + sq_count,
+        self._table.setItem(avg_row, sq_start + sq_count,
                              _avg_item(f"{avg_total:.1f}" if included else ""))
         avg_grade = (
             round((avg_total / max_total) * GRADE_SCALE, 1)
             if max_total > 0 and included else 0.0
         )
-        self._table.setItem(avg_row, 2 + sq_count + 1,
+        self._table.setItem(avg_row, sq_start + sq_count + 1,
                              _avg_item(f"{avg_grade:.1f}" if included else ""))
 
     def _apply_highlight(self):
@@ -248,9 +339,10 @@ class GradingPanel(QWidget):
             return
         filtered = self._filtered_students()
         for row_idx, student in enumerate(filtered):
+            r = _HEADER_ROWS + row_idx
             is_current = student.student_number == self._current_student.student_number
             for col in range(self._table.columnCount()):
-                item = self._table.item(row_idx, col)
+                item = self._table.item(r, col)
                 if item:
                     f = item.font()
                     f.setBold(is_current)
@@ -258,14 +350,16 @@ class GradingPanel(QWidget):
 
     def _update_row_totals(self, row: int, student: Student):
         sq_count = len(self._subquestions)
+        extra_count = len(self._extra_field_names()) if self._show_extra else 0
+        sq_start = 2 + extra_count
         max_total = self._max_total()
         sg = self._grades.get(student.student_number, {})
         total = sum(sg.get(sq.name, 0) for sq in self._subquestions)
-        total_item = self._table.item(row, 2 + sq_count)
+        total_item = self._table.item(row, sq_start + sq_count)
         if total_item:
             total_item.setText(f"{total:.1f}")
         grade = round((total / max_total) * GRADE_SCALE, 1) if max_total > 0 else 0.0
-        grade_item = self._table.item(row, 2 + sq_count + 1)
+        grade_item = self._table.item(row, sq_start + sq_count + 1)
         if grade_item:
             grade_item.setText(f"{grade:.1f}")
 
@@ -273,15 +367,21 @@ class GradingPanel(QWidget):
         if self._rebuilding:
             return
         row, col = item.row(), item.column()
-        filtered = self._filtered_students()
-        if row >= len(filtered):
+        # Ignore clicks on the 3 frozen header rows
+        if row < _HEADER_ROWS:
             return
-        sq_start, sq_end = 2, 2 + len(self._subquestions)
+        data_row = row - _HEADER_ROWS
+        filtered = self._filtered_students()
+        if data_row >= len(filtered):
+            return
+        extra_count = len(self._extra_field_names()) if self._show_extra else 0
+        sq_start = 2 + extra_count
+        sq_end = sq_start + len(self._subquestions)
         if col < sq_start or col >= sq_end:
             return
 
         sq = self._subquestions[col - sq_start]
-        student = filtered[row]
+        student = filtered[data_row]
         text = item.text().strip()
 
         if text == "":
@@ -328,12 +428,17 @@ class GradingPanel(QWidget):
         self._rebuilding = False
 
     def _on_cell_clicked(self, row: int, col: int):
-        filtered = self._filtered_students()
-        if row >= len(filtered):
+        # Ignore clicks on the 3 frozen header rows
+        if row < _HEADER_ROWS:
             return
-        student = filtered[row]
-        # Track last-focused grading cell on click too
-        sq_start, sq_end = 2, 2 + len(self._subquestions)
+        data_row = row - _HEADER_ROWS
+        filtered = self._filtered_students()
+        if data_row >= len(filtered):
+            return
+        student = filtered[data_row]
+        extra_count = len(self._extra_field_names()) if self._show_extra else 0
+        sq_start = 2 + extra_count
+        sq_end = sq_start + len(self._subquestions)
         if sq_start <= col < sq_end:
             sq = self._subquestions[col - sq_start]
             self._last_focus[student.student_number] = sq.name

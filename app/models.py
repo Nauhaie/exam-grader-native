@@ -1,6 +1,6 @@
 """Data models for exam grader."""
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -8,6 +8,7 @@ class Student:
     student_number: str
     last_name: str
     first_name: str
+    extra_fields: Dict[str, str] = field(default_factory=dict)
 
     def display_name(self) -> str:
         return f"{self.last_name} {self.first_name} (#{self.student_number})"

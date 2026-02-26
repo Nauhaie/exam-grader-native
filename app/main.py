@@ -56,6 +56,8 @@ class MainWindow(QMainWindow):
         self._pdf_viewer = PDFViewerPanel()
         self._pdf_viewer.annotations_changed.connect(self._on_annotations_changed)
         self._pdf_viewer.jump_requested.connect(self._on_jump_requested)
+        self._pdf_viewer.student_prev_requested.connect(self._select_prev_student)
+        self._pdf_viewer.student_next_requested.connect(self._select_next_student)
         splitter.addWidget(self._pdf_viewer)
 
         # Right: grading spreadsheet
@@ -191,6 +193,26 @@ class MainWindow(QMainWindow):
         if not output_dir:
             return
 
+        # Ask for a filename template
+        from PySide6.QtWidgets import QInputDialog
+        extra_keys = []
+        for s in self._students:
+            for k in s.extra_fields:
+                if k not in extra_keys:
+                    extra_keys.append(k)
+        hint = "  Available: {student_number}, {last_name}, {first_name}"
+        if extra_keys:
+            hint += ", " + ", ".join(f"{{{k}}}" for k in extra_keys)
+        template, ok = QInputDialog.getText(
+            self,
+            "Filename Template",
+            f"Output filename template (without .pdf):\n{hint}",
+            text="{student_number}_annotated",
+        )
+        if not ok:
+            return
+        template = template.strip() or "{student_number}_annotated"
+
         # Flush current student's annotations so the export is up-to-date
         if self._current_student:
             data_store.save_annotations(
@@ -216,7 +238,19 @@ class MainWindow(QMainWindow):
                 skipped += 1
                 continue
             anns = data_store.load_annotations(student.student_number)
-            dst = os.path.join(output_dir, f"{student.student_number}_annotated.pdf")
+
+            fields = dict(student.extra_fields)
+            fields.update(
+                student_number=student.student_number,
+                last_name=student.last_name,
+                first_name=student.first_name,
+            )
+            try:
+                stem = template.format_map(fields)
+            except (KeyError, ValueError):
+                stem = f"{student.student_number}_annotated"
+            dst = os.path.join(output_dir, f"{stem}.pdf")
+
             try:
                 pdf_exporter.bake_annotations(src, anns, dst)
                 exported += 1
@@ -238,6 +272,28 @@ class MainWindow(QMainWindow):
             self._grading_panel.focus_student_cell(
                 self._current_student.student_number
             )
+
+    def _select_prev_student(self):
+        """Shift+Alt+Left: go to previous student."""
+        if not self._students or not self._current_student:
+            return
+        idx = next(
+            (i for i, s in enumerate(self._students)
+             if s.student_number == self._current_student.student_number), -1
+        )
+        if idx > 0:
+            self._select_student(self._students[idx - 1])
+
+    def _select_next_student(self):
+        """Shift+Alt+Right: go to next student."""
+        if not self._students or not self._current_student:
+            return
+        idx = next(
+            (i for i, s in enumerate(self._students)
+             if s.student_number == self._current_student.student_number), -1
+        )
+        if 0 <= idx < len(self._students) - 1:
+            self._select_student(self._students[idx + 1])
 
 
 def main():
