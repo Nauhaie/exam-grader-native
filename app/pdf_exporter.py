@@ -108,7 +108,7 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
             elif ann.type == "tilde":
                 _draw_tilde(page, cx_v, cy_v, rot, to_draw)
             elif ann.type == "text" and ann.text:
-                _draw_text(page, ann, cx_v, cy_v, pw, rot, mw, mh)
+                _draw_text(page, ann, cx_v, cy_v, pw, ph, rot, mw, mh)
             elif ann.type == "line" and ann.x2 is not None and ann.y2 is not None:
                 p1 = to_draw(cx_v, cy_v)
                 p2 = to_draw(ann.x2 * pw, ann.y2 * ph)
@@ -135,17 +135,17 @@ def _draw_checkmark(page, cx_v: float, cy_v: float,
     p1 = to_draw(cx_v - r,     cy_v)
     p2 = to_draw(cx_v - r / 3, cy_v + r)
     p3 = to_draw(cx_v + r,     cy_v - r)
-    page.draw_line(p1, p2, color=_GREEN, width=1.5)
-    page.draw_line(p2, p3, color=_GREEN, width=1.5)
+    page.draw_line(p1, p2, color=_GREEN, width=2.5)
+    page.draw_line(p2, p3, color=_GREEN, width=2.5)
 
 
 def _draw_cross(page, cx_v: float, cy_v: float,
                 to_draw: Callable[[float, float], Tuple[float, float]]):
     r = 6
     page.draw_line(to_draw(cx_v - r, cy_v - r), to_draw(cx_v + r, cy_v + r),
-                   color=_RED, width=1.5)
+                   color=_RED, width=2.5)
     page.draw_line(to_draw(cx_v + r, cy_v - r), to_draw(cx_v - r, cy_v + r),
-                   color=_RED, width=1.5)
+                   color=_RED, width=2.5)
 
 
 def _draw_tilde(page, cx_v: float, cy_v: float, rot: int,
@@ -205,7 +205,7 @@ def _measure_text_box(text: str, box_w: float, p: float = _TEXT_PAD_PT,
 
 
 def _draw_text(page, ann: Annotation, cx_v: float, cy_v: float,
-               pw: float, rot: int, mw: float, mh: float):
+               pw: float, ph: float, rot: int, mw: float, mh: float):
     text = ann.text or ""
     p = _TEXT_PAD_PT
     if ann.width is not None:
@@ -223,19 +223,30 @@ def _draw_text(page, ann: Annotation, cx_v: float, cy_v: float,
             box_w = max(len(text) * 5.5, 20.0)
         box_w = max(box_w, 20.0)
 
-    box_w, box_h = _measure_text_box(text, box_w, p, _TEXT_FONTSIZE)
+    # Use stored height (converted to PDF points) when available; otherwise measure.
+    if ann.height is not None:
+        box_h = max(ann.height * ph, 10.0)
+    else:
+        _, box_h = _measure_text_box(text, box_w, p, _TEXT_FONTSIZE)
 
     box_rect  = _text_rect(cx_v,     cy_v,     box_w,         box_h,         rot, mw, mh)
     text_rect = _text_rect(cx_v + p, cy_v + p, max(1.0, box_w - p * 2),
                                                 max(1.0, box_h - p * 2), rot, mw, mh)
-    # Use a single shape so the semi-transparent rect is drawn first and the
-    # text is guaranteed to appear on top within the same content stream.
-    shape = page.new_shape()
-    shape.draw_rect(box_rect)
-    shape.finish(color=(0, 0, 0), fill=(1, 1, 0), fill_opacity=0.5, width=0.5)
-    shape.insert_textbox(text_rect, text, fontsize=9, color=(0, 0, 0), align=0,
-                         rotate=rot if rot in (90, 180, 270) else 0)
-    shape.commit()
+
+    # Draw the yellow background in its own shape so that its fill_opacity does
+    # NOT carry over into the text rendering (which caused invisible text).
+    bg = page.new_shape()
+    bg.draw_rect(box_rect)
+    bg.finish(color=(0, 0, 0), fill=(1, 1, 0), fill_opacity=0.5, width=0.5)
+    bg.commit()
+
+    # Insert text in a separate shape so it is always drawn fully opaque black.
+    # Counteract the page rotation so text appears upright in the viewer.
+    text_rotate = (360 - rot) % 360
+    txt = page.new_shape()
+    txt.insert_textbox(text_rect, text, fontsize=_TEXT_FONTSIZE, color=(0, 0, 0),
+                       align=0, rotate=text_rotate)
+    txt.commit()
 
 
 def _text_rect(cx_v: float, cy_v: float, bw: float, bh: float,

@@ -24,6 +24,14 @@ class Annotation:
     x2: Optional[float] = None   # end point (line/arrow) or edge point (circle)
     y2: Optional[float] = None   # end point (line/arrow) or edge point (circle)
     width: Optional[float] = None  # text box width as fraction of page width
+    height: Optional[float] = None  # text box height as fraction of page height
+
+
+@dataclass
+class GradingSettings:
+    max_note: float = 20.0          # maximum grade (e.g. 20 for French system)
+    rounding: float = 0.5           # round to nearest multiple of this value
+    score_total: Optional[float] = None  # denominator; None = sum of all exam points
 
 
 @dataclass

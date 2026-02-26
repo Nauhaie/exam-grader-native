@@ -18,7 +18,8 @@ from PySide6.QtWidgets import (
 import data_store
 import pdf_exporter
 from grading_panel import GradingPanel
-from models import Student
+from grading_settings_dialog import GradingSettingsDialog
+from models import GradingSettings, Student
 from pdf_viewer import PDFViewerPanel
 from setup_dialog import SetupDialog
 
@@ -35,6 +36,8 @@ class MainWindow(QMainWindow):
         self._grades = {}
         self._current_student = None
         self._export_template = "{student_number}_annotated"
+        self._project_config: dict = {}
+        self._grading_settings: GradingSettings = GradingSettings()
 
         self._setup_ui()
         self._load_session()
@@ -46,6 +49,11 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         quit_action = file_menu.addAction("Quit")
         quit_action.triggered.connect(self.close)
+
+        grading_menu = self.menuBar().addMenu("Grading")
+        grading_menu.addAction("Grading Settings…").triggered.connect(
+            self._show_grading_settings
+        )
 
         export_menu = self.menuBar().addMenu("Export")
         export_menu.addAction("Export Grades as CSV").triggered.connect(self._export_csv)
@@ -93,16 +101,35 @@ class MainWindow(QMainWindow):
 
     def _apply_project(self, project_dir: str):
         data_store.set_project_dir(project_dir)
-        project_config = data_store.load_project_config(project_dir)
-        self._grading_scheme = data_store.load_grading_scheme_from_config(project_config)
-        self._export_template = data_store.get_export_filename_template(project_config)
+        self._project_config = data_store.load_project_config(project_dir)
+        self._grading_scheme = data_store.load_grading_scheme_from_config(self._project_config)
+        self._grading_settings = data_store.load_grading_settings_from_config(self._project_config)
+        self._export_template = data_store.get_export_filename_template(self._project_config)
         self._exams_dir = os.path.join(project_dir, "exams")
         self._students = data_store.load_students(os.path.join(project_dir, "students.csv"))
         self._grades = data_store.load_grades()
         data_store.ensure_data_dirs()
         self._grading_panel.set_session(self._students, self._grading_scheme, self._grades)
+        self._grading_panel.set_grading_settings(self._grading_settings)
         if self._students:
             self._select_student(self._students[0])
+
+    def _show_grading_settings(self):
+        if not self._grading_scheme:
+            QMessageBox.warning(self, "Grading Settings", "Open a project first.")
+            return
+        exam_pts = self._grading_panel.exam_max_points()
+        dlg = GradingSettingsDialog(self._grading_settings, exam_pts, self)
+        if dlg.exec():
+            self._grading_settings = dlg.get_settings()
+            self._grading_panel.set_grading_settings(self._grading_settings)
+            # Persist immediately to config.json
+            project_dir = data_store.get_project_dir()
+            if project_dir:
+                data_store.save_grading_settings_to_config(
+                    self._project_config, self._grading_settings
+                )
+                data_store.save_project_config(project_dir, self._project_config)
 
     def _select_student(self, student: Student):
         if (self._current_student

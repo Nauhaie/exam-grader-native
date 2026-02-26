@@ -3,7 +3,7 @@ import json
 import os
 from typing import Dict, List, Optional
 
-from models import Annotation, Exercise, GradingScheme, Student, Subquestion
+from models import Annotation, Exercise, GradingScheme, GradingSettings, Student, Subquestion
 
 
 # ── App-level session config (persists which project dir was last opened) ─────
@@ -80,6 +80,14 @@ def load_project_config(project_dir: str) -> dict:
         return json.load(f)
 
 
+def save_project_config(project_dir: str, config_data: dict) -> None:
+    """Write *config_data* back to *project_dir*/config.json."""
+    path = os.path.join(project_dir, "config.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(config_data, f, indent=2)
+        f.write("\n")
+
+
 def load_grading_scheme_from_config(config_data: dict) -> GradingScheme:
     """Build a GradingScheme from a parsed config dict."""
     exercises = []
@@ -90,6 +98,26 @@ def load_grading_scheme_from_config(config_data: dict) -> GradingScheme:
         ]
         exercises.append(Exercise(name=ex_data["name"], subquestions=subquestions))
     return GradingScheme(exercises=exercises)
+
+
+def load_grading_settings_from_config(config_data: dict) -> GradingSettings:
+    """Build a GradingSettings from a parsed config dict."""
+    gs = config_data.get("grading_settings", {})
+    raw_st = gs.get("score_total")
+    return GradingSettings(
+        max_note=float(gs.get("max_note", 20.0)),
+        rounding=float(gs.get("rounding", 0.5)),
+        score_total=float(raw_st) if raw_st is not None else None,
+    )
+
+
+def save_grading_settings_to_config(config_data: dict, settings: GradingSettings) -> None:
+    """Write *settings* into *config_data* in-place (call save_project_config to persist)."""
+    config_data["grading_settings"] = {
+        "max_note": settings.max_note,
+        "rounding": settings.rounding,
+        "score_total": settings.score_total,
+    }
 
 
 def get_export_filename_template(config_data: dict) -> str:
@@ -154,6 +182,7 @@ def load_annotations(student_number: str) -> List[Annotation]:
             x2=item.get("x2"),
             y2=item.get("y2"),
             width=item.get("width"),
+            height=item.get("height"),
         ))
     return annotations
 
@@ -173,6 +202,8 @@ def save_annotations(student_number: str, annotations: List[Annotation]):
             item["y2"] = ann.y2
         if ann.width is not None:
             item["width"] = ann.width
+        if ann.height is not None:
+            item["height"] = ann.height
         data.append(item)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)

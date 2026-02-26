@@ -16,10 +16,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from models import GradingScheme, Student, Subquestion
+from models import GradingScheme, GradingSettings, Student, Subquestion
 
-GRADE_SCALE  = 20   # French 0–20 grading system
-_HEADER_ROWS = 3    # exercise row · subquestion row · max-points row
+_HEADER_ROWS = 3        # exercise row · subquestion row · max-points row
+_MIN_ROUNDING_STEP = 0.001   # prevents division-by-zero in grade rounding
 
 # Header background colours
 _BG_EX   = QColor(180, 198, 230)   # exercise name row
@@ -42,6 +42,7 @@ class GradingPanel(QWidget):
         self._exercises_for_sq: List[str] = []   # parallel list: exercise name per subquestion
         self._rebuilding = False
         self._show_extra = False   # whether extra CSV fields are shown
+        self._grading_settings: GradingSettings = GradingSettings()
         # Track the last grading cell focused per student  {student_number: sq_name}
         self._last_focus: Dict[str, str] = {}
 
@@ -103,6 +104,15 @@ class GradingPanel(QWidget):
         # Enable / disable the extra-fields checkbox based on data availability
         self._extra_cb.setEnabled(bool(self._extra_field_names()))
         self._rebuild_table()
+
+    def set_grading_settings(self, settings: GradingSettings):
+        """Update grade-calculation settings and refresh the table."""
+        self._grading_settings = settings
+        self._rebuild_table()
+
+    def exam_max_points(self) -> float:
+        """Return the sum of all subquestion max points."""
+        return self._max_total()
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
@@ -174,6 +184,21 @@ class GradingPanel(QWidget):
     def _max_total(self) -> float:
         return sum(sq.max_points for sq in self._subquestions)
 
+    def _compute_grade(self, total: float) -> float:
+        """Convert raw *total* points to a final grade using current settings."""
+        gs = self._grading_settings
+        score_total = gs.score_total if gs.score_total is not None else self._max_total()
+        if score_total <= 0:
+            return 0.0
+        raw = (total / score_total) * gs.max_note
+        step = max(_MIN_ROUNDING_STEP, gs.rounding)
+        return round(raw / step) * step
+
+    def _grade_label(self) -> str:
+        """Column header label showing the max note."""
+        mn = self._grading_settings.max_note
+        return f"Grade /{mn:g}"
+
     def _grade_color(self, val: float, max_pts: float) -> QColor:
         if max_pts <= 0:
             return QColor(255, 255, 255)
@@ -200,8 +225,8 @@ class GradingPanel(QWidget):
         # Layout: Name | Number | [extra…] | subquestions… | Total | Grade/20
         sq_start = 2 + extra_count
         col_count = sq_start + sq_count + 2
-        # _HEADER_ROWS frozen header rows + data rows + 1 average row
-        self._table.setRowCount(_HEADER_ROWS + len(filtered) + 1)
+        # _HEADER_ROWS frozen header rows + data rows + avg row + exercise-avg row
+        self._table.setRowCount(_HEADER_ROWS + len(filtered) + 2)
         self._table.setColumnCount(col_count)
 
         # ── Build the 3-row column header ─────────────────────────────────────
@@ -218,7 +243,7 @@ class GradingPanel(QWidget):
 
         # Fixed columns (Student, Number, extras, Total, Grade/20) span all 3 header rows
         fixed_cols = list(range(2 + extra_count)) + [sq_start + sq_count, sq_start + sq_count + 1]
-        fixed_labels = ["Student", "Number"] + extra_names + ["Total", "Grade /20"]
+        fixed_labels = ["Student", "Number"] + extra_names + ["Total", self._grade_label()]
         for c, label in zip(fixed_cols, fixed_labels):
             self._table.setSpan(0, c, _HEADER_ROWS, 1)
             self._table.setItem(0, c, _hdr(label, _BG_MISC, bold=True))
@@ -245,7 +270,6 @@ class GradingPanel(QWidget):
             self._table.setItem(2, col, _hdr(f"/{sq.max_points:g}", _BG_MAX))
 
         # ── Data rows ─────────────────────────────────────────────────────────
-        max_total = self._max_total()
         for row_idx, student in enumerate(filtered):
             r = _HEADER_ROWS + row_idx
             sn = student.student_number
@@ -286,8 +310,8 @@ class GradingPanel(QWidget):
             total_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self._table.setItem(r, sq_start + sq_count, total_item)
 
-            grade = round((total / max_total) * GRADE_SCALE, 1) if max_total > 0 else 0.0
-            grade_item = QTableWidgetItem(f"{grade:.1f}")
+            grade = self._compute_grade(total)
+            grade_item = QTableWidgetItem(f"{grade:g}")
             grade_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             grade_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self._table.setItem(r, sq_start + sq_count + 1, grade_item)
@@ -299,7 +323,6 @@ class GradingPanel(QWidget):
         extra_count = len(self._extra_field_names()) if self._show_extra else 0
         sq_start = 2 + extra_count
         avg_row = _HEADER_ROWS + len(filtered)
-        max_total = self._max_total()
         included = [
             s for s in filtered
             if any(
@@ -334,12 +357,72 @@ class GradingPanel(QWidget):
                                  _avg_item(f"{avg_val:.1f}" if included else ""))
         self._table.setItem(avg_row, sq_start + sq_count,
                              _avg_item(f"{avg_total:.1f}" if included else ""))
-        avg_grade = (
-            round((avg_total / max_total) * GRADE_SCALE, 1)
-            if max_total > 0 and included else 0.0
-        )
+        avg_grade = self._compute_grade(avg_total) if included else 0.0
         self._table.setItem(avg_row, sq_start + sq_count + 1,
-                             _avg_item(f"{avg_grade:.1f}" if included else ""))
+                             _avg_item(f"{avg_grade:g}" if included else ""))
+
+        self._fill_exercise_average_row(filtered, included)
+
+    def _fill_exercise_average_row(self, filtered: List[Student],
+                                    included: List[Student]):
+        """Bottom row: one merged cell per exercise showing its average score."""
+        sq_count = len(self._subquestions)
+        extra_count = len(self._extra_field_names()) if self._show_extra else 0
+        sq_start = 2 + extra_count
+        ex_row = _HEADER_ROWS + len(filtered) + 1
+
+        italic_bold = QFont()
+        italic_bold.setBold(True)
+        italic_bold.setItalic(True)
+
+        def _ex_item(text: str, bg: QColor) -> QTableWidgetItem:
+            it = QTableWidgetItem(text)
+            it.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            it.setFont(italic_bold)
+            it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            it.setBackground(bg)
+            return it
+
+        # Fixed columns
+        self._table.setItem(ex_row, 0, _ex_item("Ex. avg", _BG_MISC))
+        self._table.setItem(ex_row, 1, _ex_item("", _BG_MISC))
+        for ei in range(extra_count):
+            self._table.setItem(ex_row, 2 + ei, _ex_item("", _BG_MISC))
+        # Total and Grade columns
+        self._table.setItem(ex_row, sq_start + sq_count,   _ex_item("", _BG_MISC))
+        self._table.setItem(ex_row, sq_start + sq_count + 1, _ex_item("", _BG_MISC))
+
+        # Group subquestion column offsets by exercise (same order as header row 0)
+        ex_groups: Dict[str, List[int]] = {}
+        for ci, ex_name in enumerate(self._exercises_for_sq):
+            ex_groups.setdefault(ex_name, []).append(ci)
+
+        seen_ex: set = set()
+        for ci, ex_name in enumerate(self._exercises_for_sq):
+            if ex_name in seen_ex:
+                continue
+            seen_ex.add(ex_name)
+            cols = ex_groups[ex_name]
+            first_col = sq_start + cols[0]
+            span = len(cols)
+
+            # Average score for this exercise across included students
+            if included:
+                ex_avg = sum(
+                    sum(
+                        self._grades.get(s.student_number, {}).get(
+                            self._subquestions[ci2].name, 0.0)
+                        for ci2 in cols
+                    )
+                    for s in included
+                ) / len(included)
+                ex_max = sum(self._subquestions[ci2].max_points for ci2 in cols)
+                text = f"{ex_avg:.1f} / {ex_max:g}"
+            else:
+                text = ""
+
+            self._table.setSpan(ex_row, first_col, 1, span)
+            self._table.setItem(ex_row, first_col, _ex_item(text, _BG_EX))
 
     def _apply_highlight(self):
         if not self._current_student:
@@ -359,16 +442,15 @@ class GradingPanel(QWidget):
         sq_count = len(self._subquestions)
         extra_count = len(self._extra_field_names()) if self._show_extra else 0
         sq_start = 2 + extra_count
-        max_total = self._max_total()
         sg = self._grades.get(student.student_number, {})
         total = sum(sg.get(sq.name, 0) for sq in self._subquestions)
         total_item = self._table.item(row, sq_start + sq_count)
         if total_item:
             total_item.setText(f"{total:.1f}")
-        grade = round((total / max_total) * GRADE_SCALE, 1) if max_total > 0 else 0.0
+        grade = self._compute_grade(total)
         grade_item = self._table.item(row, sq_start + sq_count + 1)
         if grade_item:
-            grade_item.setText(f"{grade:.1f}")
+            grade_item.setText(f"{grade:g}")
 
     def _on_item_changed(self, item: QTableWidgetItem):
         if self._rebuilding:
