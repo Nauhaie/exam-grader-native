@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 
 import fitz  # pymupdf
 from PySide6.QtCore import QObject, QEvent, QPoint, QRect, Qt, Signal
-from PySide6.QtGui import QCursor, QImage, QPixmap
+from PySide6.QtGui import QCursor, QFont, QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QLineEdit,
     QPlainTextEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget,
@@ -78,9 +78,16 @@ class InlineTextEdit(QPlainTextEdit):
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # Set font explicitly so document layout and fontMetrics() use the
+        # correct size (stylesheet alone does not update the document font).
+        _font = QFont()
+        _font.setPointSize(font_pt)
+        _font.setBold(True)
+        self.setFont(_font)
+        self.document().setDefaultFont(_font)
         self.setStyleSheet(
-            f"QPlainTextEdit {{ background-color: #ffff99; border: 1px solid #888;"
-            f" font-size: {font_pt}pt; font-weight: bold; padding: 1px; }}"
+            "QPlainTextEdit { background-color: #ffff99; border: 1px solid #888;"
+            " padding: 1px; }"
         )
         self.document().contentsChanged.connect(self._adjust_height)
 
@@ -144,7 +151,13 @@ class _ToolShortcutFilter(QObject):
             return False
 
         key  = event.key()
-        mods = event.modifiers()
+        # Mask out non-standard modifiers (e.g. KeypadModifier,
+        # GroupSwitchModifier) so comparisons are robust across platforms.
+        _RELEVANT = (Qt.KeyboardModifier.ShiftModifier
+                     | Qt.KeyboardModifier.ControlModifier
+                     | Qt.KeyboardModifier.AltModifier
+                     | Qt.KeyboardModifier.MetaModifier)
+        mods  = event.modifiers() & _RELEVANT
         alt   = Qt.KeyboardModifier.AltModifier
         shift = Qt.KeyboardModifier.ShiftModifier
 
@@ -170,20 +183,21 @@ class _ToolShortcutFilter(QObject):
                 self._viewer.deselect_tool()
             return True
 
+        # ── Shift+Alt+Left / Shift+Alt+Right → previous / next student ────────
+        # (checked before Alt-only so Shift+Alt is not consumed by the Alt check)
+        if mods == (shift | alt) and key == Qt.Key.Key_Left:
+            self._viewer.student_prev_requested.emit()
+            return True
+        if mods == (shift | alt) and key == Qt.Key.Key_Right:
+            self._viewer.student_next_requested.emit()
+            return True
+
         # ── Alt+Left / Alt+Right → previous / next page ───────────────────────
         if mods == alt and key == Qt.Key.Key_Left:
             self._viewer.prev_page()
             return True
         if mods == alt and key == Qt.Key.Key_Right:
             self._viewer.next_page()
-            return True
-
-        # ── Shift+Alt+Left / Shift+Alt+Right → previous / next student ────────
-        if mods == (shift | alt) and key == Qt.Key.Key_Left:
-            self._viewer.student_prev_requested.emit()
-            return True
-        if mods == (shift | alt) and key == Qt.Key.Key_Right:
-            self._viewer.student_next_requested.emit()
             return True
 
         # ── Plain Left / Right → navigate page when pointer is over the PDF

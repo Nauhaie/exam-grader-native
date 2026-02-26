@@ -240,13 +240,14 @@ def _draw_text(page, ann: Annotation, cx_v: float, cy_v: float,
     bg.finish(color=(0, 0, 0), fill=(1, 1, 0), fill_opacity=0.5, width=0.5)
     bg.commit()
 
-    # Insert text in a separate shape so it is always drawn fully opaque black.
+    # Insert text directly on the page so it is always drawn fully opaque black.
+    # Using page.insert_textbox (rather than Shape) avoids subtle state issues
+    # that can cause text to silently disappear in some PyMuPDF versions.
     # Counteract the page rotation so text appears upright in the viewer.
     text_rotate = (360 - rot) % 360
-    txt = page.new_shape()
-    txt.insert_textbox(text_rect, text, fontsize=_TEXT_FONTSIZE, color=(0, 0, 0),
-                       align=0, rotate=text_rotate)
-    txt.commit()
+    page.insert_textbox(text_rect, text, fontsize=_TEXT_FONTSIZE,
+                        fontname="helv", color=(0, 0, 0),
+                        align=0, rotate=text_rotate)
 
 
 def _text_rect(cx_v: float, cy_v: float, bw: float, bh: float,
