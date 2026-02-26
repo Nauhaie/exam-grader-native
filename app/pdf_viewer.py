@@ -1,13 +1,13 @@
 """Center panel: PDF viewer with annotation support."""
 import os
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import fitz  # pymupdf
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QObject, QEvent, QPoint, Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
-    QHBoxLayout, QInputDialog, QLabel, QPushButton,
-    QScrollArea, QSizePolicy, QToolBar, QVBoxLayout, QWidget,
+    QApplication, QHBoxLayout, QLabel, QLineEdit,
+    QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
 import annotation_overlay
@@ -17,7 +17,88 @@ TOOL_NONE = None
 TOOL_CHECKMARK = "checkmark"
 TOOL_CROSS = "cross"
 TOOL_TEXT = "text"
+TOOL_LINE = "line"
+TOOL_ARROW = "arrow"
+TOOL_CIRCLE = "circle"
 TOOL_ERASER = "eraser"
+
+# Keyboard shortcut → tool mapping (matches the old web app)
+_KEY_TOOL_MAP = {
+    Qt.Key.Key_V: TOOL_CHECKMARK,
+    Qt.Key.Key_X: TOOL_CROSS,
+    Qt.Key.Key_T: TOOL_TEXT,
+    Qt.Key.Key_L: TOOL_LINE,
+    Qt.Key.Key_A: TOOL_ARROW,
+    Qt.Key.Key_O: TOOL_CIRCLE,
+    Qt.Key.Key_E: TOOL_ERASER,
+}
+
+
+class InlineTextEdit(QLineEdit):
+    """Floating one-line editor used for in-place text annotations."""
+
+    committed = Signal(str)
+    cancelled = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._done = False
+        self.setStyleSheet(
+            "background: #ffff99; border: 1px solid #888;"
+            " font-size: 9pt; font-weight: bold; padding: 1px;"
+        )
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            if not self._done:
+                self._done = True
+                self.cancelled.emit()
+        elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if not self._done:
+                self._done = True
+                self.committed.emit(self.text())
+        else:
+            super().keyPressEvent(event)
+
+    def focusOutEvent(self, event):
+        if not self._done:
+            self._done = True
+            text = self.text().strip()
+            if text:
+                self.committed.emit(text)
+            else:
+                self.cancelled.emit()
+        super().focusOutEvent(event)
+
+
+class _ToolShortcutFilter(QObject):
+    """Application-level event filter that routes tool keyboard shortcuts."""
+
+    def __init__(self, viewer: "PDFViewerPanel", parent=None):
+        super().__init__(parent)
+        self._viewer = viewer
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.KeyPress:
+            focused = QApplication.focusWidget()
+            # Don't steal keystrokes from text-input widgets
+            if isinstance(focused, QLineEdit):
+                return False
+            key = event.key()
+            if key in _KEY_TOOL_MAP:
+                tool = _KEY_TOOL_MAP[key]
+                # Toggle: pressing the active tool's key deselects it
+                new_tool = None if self._viewer._active_tool == tool else tool
+                self._viewer.set_active_tool(new_tool)
+                return True
+            if key == Qt.Key.Key_Escape:
+                if self._viewer._line_start is not None:
+                    self._viewer._line_start = None
+                    self._viewer._render_page()
+                else:
+                    self._viewer.deselect_tool()
+                return True
+        return False
 
 
 class ClickableLabel(QLabel):
@@ -46,6 +127,8 @@ class PDFViewerPanel(QWidget):
         self._zoom: float = 1.2
         self._annotations: List[Annotation] = []
         self._active_tool: Optional[str] = TOOL_NONE
+        self._line_start: Optional[Tuple[float, float]] = None  # for line/arrow/circle
+        self._inline_editor: Optional[InlineTextEdit] = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -57,10 +140,13 @@ class PDFViewerPanel(QWidget):
 
         self._tool_buttons = {}
         tools = [
-            (TOOL_CHECKMARK, "✓", "Place checkmark (green)"),
-            (TOOL_CROSS, "✗", "Place cross (red)"),
-            (TOOL_TEXT, "T", "Place text label"),
-            (TOOL_ERASER, "✎", "Erase annotation"),
+            (TOOL_CHECKMARK, "✓", "Checkmark (V)"),
+            (TOOL_CROSS, "✗", "Cross (X)"),
+            (TOOL_TEXT,  "T", "Text (T)"),
+            (TOOL_LINE,  "╱", "Line (L)"),
+            (TOOL_ARROW, "→", "Arrow (A)"),
+            (TOOL_CIRCLE,"○", "Circle (O)"),
+            (TOOL_ERASER,"✎", "Eraser (E)"),
         ]
         for tool_id, label, tooltip in tools:
             btn = QPushButton(label)
@@ -125,6 +211,10 @@ class PDFViewerPanel(QWidget):
 
         self._show_placeholder()
 
+        # Install application-level keyboard shortcut filter
+        self._shortcut_filter = _ToolShortcutFilter(self)
+        QApplication.instance().installEventFilter(self._shortcut_filter)
+
     # ── Public API ────────────────────────────────────────────────────────────
 
     def load_pdf(self, pdf_path: Optional[str], annotations: List[Annotation]):
@@ -135,6 +225,8 @@ class PDFViewerPanel(QWidget):
 
         self._annotations = annotations
         self._current_page = 0
+        self._line_start = None
+        self._cancel_inline_editor()
 
         if pdf_path and os.path.isfile(pdf_path):
             self._pdf_path = pdf_path
@@ -152,6 +244,9 @@ class PDFViewerPanel(QWidget):
         self.load_pdf(None, [])
 
     def set_active_tool(self, tool: Optional[str]):
+        # Cancel in-progress shape drawing when tool changes
+        if tool != self._active_tool:
+            self._line_start = None
         self._active_tool = tool
         for t, btn in self._tool_buttons.items():
             btn.setChecked(t == tool)
@@ -222,38 +317,98 @@ class PDFViewerPanel(QWidget):
                 self._annotations.pop(idx)
                 self._render_page()
                 self.annotations_changed.emit()
+
         elif self._active_tool == TOOL_TEXT:
-            text, ok = QInputDialog.getText(self, "Text Annotation", "Enter text:")
-            if ok and text.strip():
+            self._start_inline_text_edit(fx, fy)
+
+        elif self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE):
+            if self._line_start is None:
+                # First click: record start point
+                self._line_start = (fx, fy)
+            else:
+                # Second click: complete the shape
+                x1, y1 = self._line_start
+                self._line_start = None
                 ann = Annotation(
                     page=self._current_page,
-                    type="text",
-                    x=fx,
-                    y=fy,
-                    text=text.strip(),
+                    type=self._active_tool,
+                    x=x1, y=y1,
+                    x2=fx, y2=fy,
                 )
                 self._annotations.append(ann)
                 self._render_page()
                 self.annotations_changed.emit()
+
         else:
             ann = Annotation(
                 page=self._current_page,
                 type=self._active_tool,
-                x=fx,
-                y=fy,
+                x=fx, y=fy,
             )
             self._annotations.append(ann)
             self._render_page()
             self.annotations_changed.emit()
 
+    def _start_inline_text_edit(self, fx: float, fy: float):
+        """Show a floating text input directly at the clicked position."""
+        self._cancel_inline_editor()
+        pixmap = self._page_label.pixmap()
+        if not pixmap or pixmap.isNull():
+            return
+
+        cx = int(fx * pixmap.width())
+        cy = int(fy * pixmap.height())
+
+        # Map label-local point to the scroll viewport's coordinate system
+        vp = self._scroll.viewport()
+        pos_in_vp = self._page_label.mapTo(vp, QPoint(cx, cy))
+
+        editor = InlineTextEdit(vp)
+        editor.setMinimumWidth(80)
+        editor.resize(140, 22)
+        editor.move(pos_in_vp)
+        editor.show()
+        editor.setFocus()
+        self._inline_editor = editor
+
+        def _commit(text: str):
+            self._inline_editor = None
+            editor.deleteLater()
+            if text.strip():
+                ann = Annotation(
+                    page=self._current_page,
+                    type="text",
+                    x=fx, y=fy,
+                    text=text.strip(),
+                )
+                self._annotations.append(ann)
+                self._render_page()
+                self.annotations_changed.emit()
+
+        def _cancel():
+            self._inline_editor = None
+            editor.deleteLater()
+
+        editor.committed.connect(_commit)
+        editor.cancelled.connect(_cancel)
+
+    def _cancel_inline_editor(self):
+        if self._inline_editor is not None:
+            self._inline_editor.deleteLater()
+            self._inline_editor = None
+
     def _prev_page(self):
         if self._doc and self._current_page > 0:
             self._current_page -= 1
+            self._line_start = None
+            self._cancel_inline_editor()
             self._render_page()
 
     def _next_page(self):
         if self._doc and self._current_page < self._doc.page_count - 1:
             self._current_page += 1
+            self._line_start = None
+            self._cancel_inline_editor()
             self._render_page()
 
     def _zoom_in(self):
@@ -267,6 +422,11 @@ class PDFViewerPanel(QWidget):
             self._render_page()
 
     def keyPressEvent(self, event):
+        # Handled by the application-level filter; keep Escape as fallback
         if event.key() == Qt.Key.Key_Escape:
-            self.deselect_tool()
+            if self._line_start is not None:
+                self._line_start = None
+                self._render_page()
+            else:
+                self.deselect_tool()
         super().keyPressEvent(event)
