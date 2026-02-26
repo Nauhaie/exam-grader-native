@@ -34,7 +34,8 @@ _KEY_TOOL_MAP = {
     Qt.Key.Key_E: TOOL_ERASER,
 }
 
-_DRAG_TOL = 20  # pixel hit-tolerance for drag handles
+_DRAG_TOL = 20          # pixel hit-tolerance for drag handles
+_WHEEL_ZOOM_DIVISOR = 800.0  # wheel-delta units that equal a 1× zoom step
 
 
 @dataclass
@@ -195,7 +196,7 @@ class PDFViewerPanel(QWidget):
             (TOOL_LINE,      "╱", "Line (L)"),
             (TOOL_ARROW,     "→", "Arrow (A)"),
             (TOOL_CIRCLE,    "○", "Circle (O)"),
-            (TOOL_ERASER,    "⌦", "Eraser (E)"),
+            (TOOL_ERASER,    "⌫", "Eraser (E)"),
         ]:
             btn = QPushButton(label)
             btn.setToolTip(tip)
@@ -237,6 +238,10 @@ class PDFViewerPanel(QWidget):
         self._page_label.released.connect(self._on_page_released)
         self._scroll.setWidget(self._page_label)
         layout.addWidget(self._scroll, stretch=1)
+
+        # Intercept wheel and native pinch gestures on the scroll viewport
+        # so they zoom the PDF instead of scrolling.
+        self._scroll.viewport().installEventFilter(self)
 
         # ── Page navigation ───────────────────────────────────────────────────
         nav = QWidget()
@@ -611,6 +616,34 @@ class PDFViewerPanel(QWidget):
 
     def _on_tool_clicked(self, tool: str, checked: bool):
         self.set_active_tool(tool if checked else TOOL_NONE)
+
+    # ── Gesture / wheel zoom ──────────────────────────────────────────────────
+
+    def eventFilter(self, obj, event):
+        """Intercept scroll-viewport events for zoom gestures."""
+        if obj is self._scroll.viewport():
+            t = event.type()
+            # Ctrl + scroll wheel → zoom (works on all platforms)
+            if t == QEvent.Type.Wheel:
+                if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                    delta = event.angleDelta().y()
+                    if delta:
+                        self._apply_zoom_factor(1.0 + delta / _WHEEL_ZOOM_DIVISOR)
+                    return True
+            # Native pinch gesture → zoom (macOS trackpad)
+            elif t == QEvent.Type.NativeGesture:
+                if (event.gestureType()
+                        == Qt.NativeGestureType.ZoomNativeGesture):
+                    self._apply_zoom_factor(1.0 + event.value())
+                    return True
+        return super().eventFilter(obj, event)
+
+    def _apply_zoom_factor(self, factor: float):
+        """Multiply current zoom by *factor*, clamped to [0.5, 3.0]."""
+        new_zoom = max(0.5, min(3.0, self._zoom * factor))
+        if abs(new_zoom - self._zoom) > 0.005:
+            self._zoom = new_zoom
+            self._render_page()
 
     def _zoom_in(self):
         if self._zoom < 3.0:
