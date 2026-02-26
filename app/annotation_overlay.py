@@ -25,7 +25,8 @@ _TEXT_WRAP_MAX_H = 10_000   # generous max-height for word-wrap bound calculatio
 
 # ── Public drawing helpers ────────────────────────────────────────────────────
 
-def draw_annotations(pixmap: QPixmap, annotations: List[Annotation], page: int) -> QPixmap:
+def draw_annotations(pixmap: QPixmap, annotations: List[Annotation], page: int,
+                     zoom: float = 1.0) -> QPixmap:
     """Return a *copy* of *pixmap* with all annotations for *page* drawn on it."""
     result = pixmap.copy()
     painter = QPainter(result)
@@ -34,7 +35,7 @@ def draw_annotations(pixmap: QPixmap, annotations: List[Annotation], page: int) 
     for ann in annotations:
         if ann.page != page:
             continue
-        _draw_one(painter, ann, int(ann.x * w), int(ann.y * h), w, h)
+        _draw_one(painter, ann, int(ann.x * w), int(ann.y * h), w, h, zoom)
     painter.end()
     return result
 
