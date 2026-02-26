@@ -9,20 +9,21 @@ from PySide6.QtCore import QObject, QEvent, QPoint, Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QScrollArea, QVBoxLayout, QWidget,
+    QPlainTextEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
 import annotation_overlay
 from models import Annotation
 
-TOOL_NONE     = None
+TOOL_NONE      = None
 TOOL_CHECKMARK = "checkmark"
-TOOL_CROSS    = "cross"
-TOOL_TEXT     = "text"
-TOOL_LINE     = "line"
-TOOL_ARROW    = "arrow"
-TOOL_CIRCLE   = "circle"
-TOOL_ERASER   = "eraser"
+TOOL_CROSS     = "cross"
+TOOL_TEXT      = "text"
+TOOL_LINE      = "line"
+TOOL_ARROW     = "arrow"
+TOOL_CIRCLE    = "circle"
+TOOL_TILDE     = "tilde"
+TOOL_ERASER    = "eraser"
 
 _KEY_TOOL_MAP = {
     Qt.Key.Key_V: TOOL_CHECKMARK,
@@ -31,11 +32,16 @@ _KEY_TOOL_MAP = {
     Qt.Key.Key_L: TOOL_LINE,
     Qt.Key.Key_A: TOOL_ARROW,
     Qt.Key.Key_O: TOOL_CIRCLE,
+    Qt.Key.Key_N: TOOL_TILDE,
     Qt.Key.Key_E: TOOL_ERASER,
 }
 
 _DRAG_TOL = 20          # pixel hit-tolerance for drag handles
 _WHEEL_ZOOM_DIVISOR = 800.0  # wheel-delta units that equal a 1× zoom step
+# Modifier for pan-by-drag: Cmd on macOS (MetaModifier), Ctrl elsewhere
+_INLINE_EDITOR_MIN_W  = 120
+_INLINE_EDITOR_WIDTH  = 200
+_INLINE_EDITOR_HEIGHT = 80
 
 
 @dataclass
@@ -52,8 +58,14 @@ class _DragState:
     orig_width: float = 0.0
 
 
-class InlineTextEdit(QLineEdit):
-    """Floating single-line editor for text annotations."""
+class InlineTextEdit(QPlainTextEdit):
+    """Floating multi-line editor for text annotations.
+
+    * Enter inserts a newline.
+    * Ctrl+Enter (or Ctrl+Return) commits the text.
+    * Escape cancels without saving.
+    * Clicking away (focusOut) commits non-empty text.
+    """
 
     committed = Signal(str)
     cancelled = Signal()
@@ -61,6 +73,7 @@ class InlineTextEdit(QLineEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._done = False
+        self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         self.setStyleSheet(
             "background: #ffff99; border: 1px solid #888;"
             " font-size: 9pt; font-weight: bold; padding: 1px;"
@@ -72,17 +85,21 @@ class InlineTextEdit(QLineEdit):
                 self._done = True
                 self.cancelled.emit()
         elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            if not self._done:
-                self._done = True
-                self.committed.emit(self.text())
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                # Ctrl+Enter → commit
+                if not self._done:
+                    self._done = True
+                    self.committed.emit(self.toPlainText())
+            else:
+                super().keyPressEvent(event)   # plain Enter → newline
         else:
             super().keyPressEvent(event)
 
     def focusOutEvent(self, event):
         if not self._done:
             self._done = True
-            text = self.text().strip()
-            if text:
+            text = self.toPlainText()
+            if text.strip():
                 self.committed.emit(text)
             else:
                 self.cancelled.emit()
@@ -90,7 +107,7 @@ class InlineTextEdit(QLineEdit):
 
 
 class _ToolShortcutFilter(QObject):
-    """App-level event filter: tool keyboard shortcuts + 'P' jump."""
+    """App-level event filter: tool shortcuts, page/student navigation."""
 
     def __init__(self, viewer: "PDFViewerPanel", parent=None):
         super().__init__(parent)
@@ -99,19 +116,30 @@ class _ToolShortcutFilter(QObject):
     def eventFilter(self, obj, event):
         if event.type() != QEvent.Type.KeyPress:
             return False
-        if isinstance(QApplication.focusWidget(), QLineEdit):
+        # Don't steal keys while any text-input widget has focus
+        fw = QApplication.focusWidget()
+        if isinstance(fw, (QLineEdit, QPlainTextEdit)):
             return False
 
-        key = event.key()
-        if key in _KEY_TOOL_MAP:
+        key  = event.key()
+        mods = event.modifiers()
+        alt   = Qt.KeyboardModifier.AltModifier
+        shift = Qt.KeyboardModifier.ShiftModifier
+
+        # ── Tool toggles ──────────────────────────────────────────────────────
+        if not mods and key in _KEY_TOOL_MAP:
             tool = _KEY_TOOL_MAP[key]
             new = TOOL_NONE if self._viewer._active_tool == tool else tool
             self._viewer.set_active_tool(new)
             return True
-        if key == Qt.Key.Key_P:
+
+        # ── Jump to grading cell ──────────────────────────────────────────────
+        if not mods and key == Qt.Key.Key_P:
             self._viewer.jump_requested.emit()
             return True
-        if key == Qt.Key.Key_Escape:
+
+        # ── Escape: cancel in-progress line / deselect tool ───────────────────
+        if not mods and key == Qt.Key.Key_Escape:
             if self._viewer._line_start is not None:
                 self._viewer._line_start = None
                 self._viewer._preview_pos = None
@@ -119,15 +147,48 @@ class _ToolShortcutFilter(QObject):
             else:
                 self._viewer.deselect_tool()
             return True
+
+        # ── Alt+Left / Alt+Right → previous / next page ───────────────────────
+        if mods == alt and key == Qt.Key.Key_Left:
+            self._viewer.prev_page()
+            return True
+        if mods == alt and key == Qt.Key.Key_Right:
+            self._viewer.next_page()
+            return True
+
+        # ── Shift+Alt+Left / Shift+Alt+Right → previous / next student ────────
+        if mods == (shift | alt) and key == Qt.Key.Key_Left:
+            self._viewer.student_prev_requested.emit()
+            return True
+        if mods == (shift | alt) and key == Qt.Key.Key_Right:
+            self._viewer.student_next_requested.emit()
+            return True
+
+        # ── Plain Left / Right → navigate page only when view fully fits ──────
+        # If the horizontal scroll bar has nothing to scroll the page fits
+        # horizontally, so the arrow key should flip the page rather than
+        # attempt to scroll (there is nothing to scroll).
+        if not mods and key in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+            hbar = self._viewer._scroll.horizontalScrollBar()
+            if hbar.maximum() == 0:
+                if key == Qt.Key.Key_Left:
+                    self._viewer.prev_page()
+                else:
+                    self._viewer.next_page()
+                return True
+            # Scrollbar is active → let the scroll area handle it naturally.
+            return False
+
         return False
 
 
 class ClickableLabel(QLabel):
     """QLabel that emits fractional-coordinate mouse signals."""
 
-    pressed  = Signal(float, float)
-    moved    = Signal(float, float)
-    released = Signal(float, float)
+    pressed       = Signal(float, float)
+    moved         = Signal(float, float)
+    released      = Signal(float, float)
+    double_clicked = Signal(float, float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -159,10 +220,18 @@ class ClickableLabel(QLabel):
             self.released.emit(fx, fy)
         super().mouseReleaseEvent(event)
 
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            fx, fy = self._frac(event)
+            self.double_clicked.emit(fx, fy)
+        super().mouseDoubleClickEvent(event)
+
 
 class PDFViewerPanel(QWidget):
-    annotations_changed = Signal()
-    jump_requested = Signal()   # emitted when user presses 'P'
+    annotations_changed    = Signal()
+    jump_requested         = Signal()   # 'P' key
+    student_prev_requested = Signal()   # Shift+Alt+Left
+    student_next_requested = Signal()   # Shift+Alt+Right
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -179,6 +248,12 @@ class PDFViewerPanel(QWidget):
         self._base_pixmap: Optional[QPixmap] = None  # PDF page + baked annotations
         self._drag: Optional[_DragState] = None
         self._drag_moved: bool = False
+        # Pan-by-drag state (Cmd/Ctrl + left-drag)
+        self._pan_origin: Optional[Tuple[float, float]] = None
+        self._pan_hval: int = 0
+        self._pan_vval: int = 0
+        self._pan_pw: int = 1
+        self._pan_ph: int = 1
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -190,13 +265,14 @@ class PDFViewerPanel(QWidget):
 
         self._tool_buttons: Dict[str, QPushButton] = {}
         for tool_id, label, tip in [
-            (TOOL_CHECKMARK, "✓", "Checkmark (V)"),
-            (TOOL_CROSS,     "✗", "Cross (X)"),
-            (TOOL_TEXT,      "T", "Text (T)"),
-            (TOOL_LINE,      "╱", "Line (L)"),
-            (TOOL_ARROW,     "→", "Arrow (A)"),
-            (TOOL_CIRCLE,    "○", "Circle (O)"),
-            (TOOL_ERASER,    "⌫", "Eraser (E)"),
+            (TOOL_CHECKMARK, "✓\nV", "Checkmark (V)"),
+            (TOOL_CROSS,     "✗\nX", "Cross (X)"),
+            (TOOL_TEXT,      "T",    "Text (T)"),
+            (TOOL_LINE,      "╱\nL", "Line (L)"),
+            (TOOL_ARROW,     "→\nA", "Arrow (A)"),
+            (TOOL_CIRCLE,    "○\nO", "Circle (O)"),
+            (TOOL_TILDE,     "~\nN", "Approx/tilde (N)"),
+            (TOOL_ERASER,    "⌫\nE", "Eraser (E)"),
         ]:
             btn = QPushButton(label)
             btn.setToolTip(tip)
@@ -258,6 +334,7 @@ class PDFViewerPanel(QWidget):
         self._page_label.pressed.connect(self._on_page_pressed)
         self._page_label.moved.connect(self._on_page_moved)
         self._page_label.released.connect(self._on_page_released)
+        self._page_label.double_clicked.connect(self._on_page_double_clicked)
         self._scroll.setWidget(self._page_label)
         layout.addWidget(self._scroll, stretch=1)
 
@@ -310,6 +387,14 @@ class PDFViewerPanel(QWidget):
 
     def get_annotations(self) -> List[Annotation]:
         return self._annotations
+
+    def prev_page(self):
+        """Navigate to the previous page (public, also used by shortcuts)."""
+        self._prev_page()
+
+    def next_page(self):
+        """Navigate to the next page (public, also used by shortcuts)."""
+        self._next_page()
 
     # ── Rendering ─────────────────────────────────────────────────────────────
 
@@ -374,6 +459,17 @@ class PDFViewerPanel(QWidget):
 
     def _on_page_pressed(self, fx: float, fy: float):
         self._drag_moved = False
+        # Cmd/Ctrl + left-click → start panning
+        if QApplication.queryKeyboardModifiers() & _PAN_MOD:
+            pm = self._page_label.pixmap()
+            if pm and not pm.isNull():
+                self._pan_origin = (fx, fy)
+                self._pan_hval = self._scroll.horizontalScrollBar().value()
+                self._pan_vval = self._scroll.verticalScrollBar().value()
+                self._pan_pw = pm.width()
+                self._pan_ph = pm.height()
+                self._page_label.setCursor(Qt.CursorShape.ClosedHandCursor)
+            return
         if self._active_tool in (TOOL_NONE, None):
             drag = self._find_drag_target(fx, fy)
             if drag is not None:
@@ -382,6 +478,18 @@ class PDFViewerPanel(QWidget):
         self._handle_click(fx, fy)
 
     def _on_page_moved(self, fx: float, fy: float):
+        # Active pan
+        if self._pan_origin is not None:
+            dx = (fx - self._pan_origin[0]) * self._pan_pw
+            dy = (fy - self._pan_origin[1]) * self._pan_ph
+            self._scroll.horizontalScrollBar().setValue(int(self._pan_hval - dx))
+            self._scroll.verticalScrollBar().setValue(int(self._pan_vval - dy))
+            return
+        # Hover cursor hint when pan modifier is held
+        if QApplication.queryKeyboardModifiers() & _PAN_MOD:
+            self._page_label.setCursor(Qt.CursorShape.OpenHandCursor)
+        else:
+            self._page_label.unsetCursor()
         if self._drag is not None:
             self._drag_moved = True
             self._apply_drag(fx, fy)
@@ -392,6 +500,11 @@ class PDFViewerPanel(QWidget):
             self._update_display()
 
     def _on_page_released(self, fx: float, fy: float):
+        # End pan
+        if self._pan_origin is not None:
+            self._pan_origin = None
+            self._page_label.unsetCursor()
+            return
         if self._drag is not None:
             self._apply_drag(fx, fy)
             self._drag = None
@@ -448,7 +561,7 @@ class PDFViewerPanel(QWidget):
                 self.annotations_changed.emit()
                 self.deselect_tool()
 
-        else:  # checkmark or cross
+        else:  # checkmark, cross, or tilde
             self._annotations.append(Annotation(
                 page=self._current_page,
                 type=self._active_tool,
@@ -457,6 +570,22 @@ class PDFViewerPanel(QWidget):
             self._rebuild_base_and_display()
             self.annotations_changed.emit()
             self.deselect_tool()
+
+    # ── Double-click: edit existing text annotation (any tool mode) ───────────
+
+    def _on_page_double_clicked(self, fx: float, fy: float):
+        """Double-clicking a text annotation opens it for editing."""
+        # Only handle when no shape-drawing tool is active (text tool already
+        # handles editing on single-click).
+        if self._active_tool not in (TOOL_NONE, None):
+            return
+        pm = self._page_label.pixmap()
+        if not pm or pm.isNull():
+            return
+        idx = self._find_text_at(fx, fy, pm.width(), pm.height())
+        if idx >= 0:
+            ann = self._annotations[idx]
+            self._start_text_edit(ann.x, ann.y, edit_idx=idx)
 
     # ── Drag helpers ──────────────────────────────────────────────────────────
 
@@ -473,14 +602,17 @@ class PDFViewerPanel(QWidget):
         if d.kind == "point":
             ann.x, ann.y = cl(d.orig_x + dx), cl(d.orig_y + dy)
         elif d.kind == "line-start":
-            ann.x, ann.y = cl(fx), cl(fy)
+            # Use offset from the original start point so there is no jump
+            ann.x, ann.y = cl(d.orig_x + dx), cl(d.orig_y + dy)
         elif d.kind == "line-end":
-            ann.x2, ann.y2 = cl(fx), cl(fy)
+            # Use offset from the original end point so there is no jump
+            ann.x2, ann.y2 = cl(d.orig_x2 + dx), cl(d.orig_y2 + dy)
         elif d.kind == "line-move":
             ann.x,  ann.y  = cl(d.orig_x  + dx), cl(d.orig_y  + dy)
             ann.x2, ann.y2 = cl(d.orig_x2 + dx), cl(d.orig_y2 + dy)
         elif d.kind == "circle-edge":
-            ann.x2, ann.y2 = cl(fx), cl(fy)
+            # Use offset from the original edge point so there is no jump
+            ann.x2, ann.y2 = cl(d.orig_x2 + dx), cl(d.orig_y2 + dy)
         elif d.kind == "circle-move":
             ann.x,  ann.y  = cl(d.orig_x  + dx), cl(d.orig_y  + dy)
             ann.x2, ann.y2 = cl(d.orig_x2 + dx), cl(d.orig_y2 + dy)
@@ -519,7 +651,8 @@ class PDFViewerPanel(QWidget):
                 ex, ey = ann.x2 * w, ann.y2 * h
                 if math.hypot(mx - ex, my - ey) <= tol:
                     return _DragState("circle-edge", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
-                if math.hypot(mx - cx, my - cy) <= radius + tol:
+                # Only grab near the circumference, not the whole filled interior
+                if abs(math.hypot(mx - cx, my - cy) - radius) <= tol:
                     return _DragState("circle-move", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
 
             elif ann.type == "text":
@@ -565,11 +698,11 @@ class PDFViewerPanel(QWidget):
         pos = self._page_label.mapTo(vp, QPoint(cx, cy))
 
         editor = InlineTextEdit(vp)
-        editor.setMinimumWidth(80)
-        editor.resize(140, 22)
+        editor.setMinimumWidth(_INLINE_EDITOR_MIN_W)
+        editor.resize(_INLINE_EDITOR_WIDTH, _INLINE_EDITOR_HEIGHT)
         editor.move(pos)
         if edit_idx >= 0:
-            editor.setText(self._annotations[edit_idx].text or "")
+            editor.setPlainText(self._annotations[edit_idx].text or "")
             editor.selectAll()
         editor.show()
         editor.setFocus()

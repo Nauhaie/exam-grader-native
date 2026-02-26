@@ -44,14 +44,17 @@ def save_session_config(exams_dir: str, students_csv: str, grading_scheme: str):
 
 def load_students(csv_path: str) -> List[Student]:
     import csv
+    _CORE = {"student_number", "last_name", "first_name"}
     students = []
     with open(csv_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
+            extra = {k: str(v).strip() for k, v in row.items() if k not in _CORE}
             students.append(Student(
                 student_number=str(row["student_number"]).strip(),
                 last_name=str(row["last_name"]).strip(),
                 first_name=str(row["first_name"]).strip(),
+                extra_fields=extra,
             ))
     return students
 
