@@ -14,7 +14,7 @@ cd "$(dirname "$0")"
 echo "==> Installing PyInstaller (if not already installed)…"
 pip install --quiet pyinstaller
 
-echo "==> Cleaning previous build artefacts…"
+echo "==> Cleaning previous build artifacts…"
 rm -rf build dist ExamGrader.spec
 
 echo "==> Building…"

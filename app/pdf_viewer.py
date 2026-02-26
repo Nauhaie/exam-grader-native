@@ -38,7 +38,9 @@ _KEY_TOOL_MAP = {
 
 _DRAG_TOL = 20          # pixel hit-tolerance for drag handles
 _WHEEL_ZOOM_DIVISOR = 800.0  # wheel-delta units that equal a 1× zoom step
-# Modifier for pan-by-drag: Cmd on macOS (MetaModifier), Ctrl elsewhere
+# Pan modifier: Cmd on macOS (MetaModifier maps to Cmd), Ctrl on Win/Linux
+_PAN_MOD = Qt.KeyboardModifier.MetaModifier | Qt.KeyboardModifier.ControlModifier
+
 _INLINE_EDITOR_MIN_W  = 120
 _INLINE_EDITOR_WIDTH  = 200
 _INLINE_EDITOR_HEIGHT = 80
