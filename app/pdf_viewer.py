@@ -207,6 +207,28 @@ class PDFViewerPanel(QWidget):
             self._tool_buttons[tool_id] = btn
 
         tb.addStretch()
+
+        # ── Page navigation (in toolbar) ──────────────────────────────────────
+        self._prev_btn = QPushButton("◀")
+        self._prev_btn.setToolTip("Previous page")
+        self._prev_btn.setFixedWidth(32)
+        self._prev_btn.clicked.connect(self._prev_page)
+        tb.addWidget(self._prev_btn)
+
+        self._page_counter = QLabel("Page 1 / 1")
+        self._page_counter.setFixedWidth(80)
+        self._page_counter.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tb.addWidget(self._page_counter)
+
+        self._next_btn = QPushButton("▶")
+        self._next_btn.setToolTip("Next page")
+        self._next_btn.setFixedWidth(32)
+        self._next_btn.clicked.connect(self._next_page)
+        tb.addWidget(self._next_btn)
+
+        tb.addStretch()
+
+        # ── Zoom controls (in toolbar) ────────────────────────────────────────
         for label, tip, slot in [
             ("−", "Zoom out", self._zoom_out),
             ("+", "Zoom in",  self._zoom_in),
@@ -242,21 +264,6 @@ class PDFViewerPanel(QWidget):
         # Intercept wheel and native pinch gestures on the scroll viewport
         # so they zoom the PDF instead of scrolling.
         self._scroll.viewport().installEventFilter(self)
-
-        # ── Page navigation ───────────────────────────────────────────────────
-        nav = QWidget()
-        nl = QHBoxLayout(nav)
-        nl.setContentsMargins(4, 4, 4, 4)
-        self._prev_btn = QPushButton("◀ Prev")
-        self._prev_btn.clicked.connect(self._prev_page)
-        nl.addWidget(self._prev_btn)
-        self._page_counter = QLabel("Page 1 / 1")
-        self._page_counter.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        nl.addWidget(self._page_counter, stretch=1)
-        self._next_btn = QPushButton("Next ▶")
-        self._next_btn.clicked.connect(self._next_page)
-        nl.addWidget(self._next_btn)
-        layout.addWidget(nav)
 
         self._show_placeholder()
 
