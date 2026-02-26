@@ -150,34 +150,80 @@ def _draw_cross(page, cx_v: float, cy_v: float,
 
 def _draw_tilde(page, cx_v: float, cy_v: float, rot: int,
                 to_draw: Callable[[float, float], Tuple[float, float]]):
-    cx_d, cy_d = to_draw(cx_v, cy_v)
-    # rotate= undoes the page rotation so the glyph appears upright
-    page.insert_text(
-        fitz.Point(cx_d - 8, cy_d + 10),
-        "~", fontsize=28, color=_ORANGE, rotate=rot,
-    )
+    # Draw a smooth S-curve wave (same shape as the screen renderer).
+    amp = 5    # amplitude in visual pts
+    ww  = 18   # half-width on each side of centre
+    p0  = to_draw(cx_v - ww,     cy_v)
+    cp1 = to_draw(cx_v - ww / 2, cy_v - amp)
+    cp2 = to_draw(cx_v,          cy_v - amp)
+    p1  = to_draw(cx_v,          cy_v)
+    cp3 = to_draw(cx_v,          cy_v + amp)
+    cp4 = to_draw(cx_v + ww / 2, cy_v + amp)
+    p2  = to_draw(cx_v + ww,     cy_v)
+    shape = page.new_shape()
+    shape.draw_bezier(p0, cp1, cp2, p1)
+    shape.draw_bezier(p1, cp3, cp4, p2)
+    shape.finish(color=_ORANGE, width=2.5, closePath=False)
+    shape.commit()
 
 
 _TEXT_PAD_PT = 3   # matches _TEXT_PAD in annotation_overlay.py
+_TEXT_FONTSIZE = 9
+
+
+def _measure_text_box(text: str, box_w: float, p: float = _TEXT_PAD_PT,
+                      fontsize: float = _TEXT_FONTSIZE) -> Tuple[float, float]:
+    """Return *(box_w, box_h)* in PDF points sufficient to hold *text*.
+
+    Uses PyMuPDF's own font metrics so the result matches ``insert_textbox``
+    exactly (no more yellow boxes with missing text).
+    """
+    inner_w = max(1.0, box_w - p * 2)
+    line_h = fontsize * 1.2          # default leading used by insert_textbox
+    try:
+        font = fitz.Font("helv")
+        total_lines = 0
+        for para in text.split("\n"):
+            words = para.split() if para.strip() else []
+            if not words:
+                total_lines += 1
+                continue
+            cur_w = 0.0
+            n_lines = 1
+            for word in words:
+                ww = font.text_length(word + " ", fontsize=fontsize)
+                if cur_w > 0 and cur_w + ww > inner_w:
+                    n_lines += 1
+                    cur_w = ww   # start new line with this word
+                else:
+                    cur_w += ww
+            total_lines += n_lines
+    except Exception:
+        total_lines = max(1, len(text.split("\n")))
+    box_h = max(20.0, total_lines * line_h + p * 2)
+    return box_w, box_h
 
 
 def _draw_text(page, ann: Annotation, cx_v: float, cy_v: float,
                pw: float, rot: int, mw: float, mh: float):
     text = ann.text or ""
-    if ann.width is not None:
-        box_w = max(ann.width * pw, 10)
-    else:
-        box_w = max(len(text) * 5.5, 20)
-
-    # Estimate height — use 13pt per line so fontsize=9 fits with default leading
-    chars_per_line = max(1, int(box_w / 5.5))
-    explicit_lines = text.split("\n")
-    wrapped = sum(
-        max(1, math.ceil(len(ln) / chars_per_line)) if ln else 1
-        for ln in explicit_lines
-    )
     p = _TEXT_PAD_PT
-    box_h = max(20.0, wrapped * 13 + p * 2)
+    if ann.width is not None:
+        box_w = max(ann.width * pw, 10.0)
+    else:
+        # Compute width from the longest line using actual font metrics.
+        try:
+            font = fitz.Font("helv")
+            lines = text.split("\n") if text else [""]
+            box_w = max(
+                (font.text_length(ln, fontsize=_TEXT_FONTSIZE) for ln in lines),
+                default=0.0,
+            ) + p * 2
+        except Exception:
+            box_w = max(len(text) * 5.5, 20.0)
+        box_w = max(box_w, 20.0)
+
+    box_w, box_h = _measure_text_box(text, box_w, p, _TEXT_FONTSIZE)
 
     box_rect  = _text_rect(cx_v,     cy_v,     box_w,         box_h,         rot, mw, mh)
     text_rect = _text_rect(cx_v + p, cy_v + p, max(1.0, box_w - p * 2),

@@ -11,6 +11,19 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Use the same virtual environment as run.sh so we don't touch the system Python.
+if [ ! -d "venv" ]; then
+  echo "==> Creating virtual environment…"
+  python3 -m venv venv
+fi
+
+echo "==> Activating virtual environment…"
+# shellcheck disable=SC1091
+source venv/bin/activate
+
+echo "==> Installing/updating dependencies…"
+pip install --quiet -r requirements.txt
+
 echo "==> Installing PyInstaller (if not already installed)…"
 pip install --quiet pyinstaller
 

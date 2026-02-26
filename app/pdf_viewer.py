@@ -76,10 +76,21 @@ class InlineTextEdit(QPlainTextEdit):
         super().__init__(parent)
         self._done = False
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setStyleSheet(
             f"background: #ffff99; border: 1px solid #888;"
             f" font-size: {font_pt}pt; font-weight: bold; padding: 1px;"
         )
+        self.document().contentsChanged.connect(self._adjust_height)
+
+    def _adjust_height(self):
+        """Resize widget height to match document content (no scrollbars)."""
+        # frameWidth()*2 for the border; +4 for top/bottom content margins
+        doc_h = int(self.document().size().height()) + self.frameWidth() * 2 + 4
+        new_h = max(40, doc_h)
+        if self.height() != new_h:
+            self.resize(self.width(), new_h)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
@@ -730,9 +741,13 @@ class PDFViewerPanel(QWidget):
                 if edit_idx >= 0:
                     self._annotations[edit_idx].text = text.strip()
                 else:
+                    # Record editor width as a fraction of the page so the
+                    # rendered box matches the editor width consistently.
+                    width_frac = editor.width() / pm.width() if pm.width() > 0 else None
                     self._annotations.append(Annotation(
                         page=self._current_page, type="text",
                         x=fx, y=fy, text=text.strip(),
+                        width=width_frac,
                     ))
                 self._rebuild_base_and_display()
                 self.annotations_changed.emit()

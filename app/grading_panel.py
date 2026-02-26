@@ -389,7 +389,8 @@ class GradingPanel(QWidget):
 
         sq = self._subquestions[col - sq_start]
         student = filtered[data_row]
-        text = item.text().strip()
+        # Accept French decimal comma ("1,5" → "1.5")
+        text = item.text().strip().replace(",", ".")
 
         if text == "":
             sg = self._grades.get(student.student_number, {})
