@@ -88,7 +88,9 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
     if log_path:
         try:
             _log_fh = open(log_path, "w", encoding="utf-8")
-        except OSError:
+            print(f"[bake] log file opened: {log_path}")
+        except OSError as e:
+            print(f"[bake] WARNING: could not open log file {log_path!r}: {e}")
             _log_fh = None
 
     def _log(msg: str) -> None:
@@ -97,12 +99,16 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
             _log_fh.flush()
 
     try:
+        print(f"[bake] source  : {pdf_path}")
+        print(f"[bake] output  : {output_path}")
+        print(f"[bake] annotations: {len(annotations)}")
         _log(f"SOURCE : {pdf_path}")
         _log(f"OUTPUT : {output_path}")
         _log(f"ANNOTATIONS : {len(annotations)}")
         _log("")
 
         try:
+            print("[bake] opening PDF…")
             doc = fitz.open(pdf_path)
             try:
                 for page_idx in range(doc.page_count):
@@ -177,17 +183,18 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                                 except Exception:
                                     box_w = max(len(ann.text) * 5.5, 20.0)
                                 box_w = max(box_w, 20.0)
+                            _, measured_box_h = _measure_text_box(ann.text, box_w, p, _TEXT_FONTSIZE)
                             if ann.height is not None:
-                                box_h = max(ann.height * ph, 10.0)
+                                box_h = max(ann.height * ph, measured_box_h, 10.0)
                             else:
-                                _, box_h = _measure_text_box(ann.text, box_w, p, _TEXT_FONTSIZE)
+                                box_h = max(measured_box_h, 10.0)
                             box_rect  = _text_rect(cx_v,     cy_v,     box_w,         box_h,         rot, mw, mh)
                             text_rect = _text_rect(cx_v + p, cy_v + p, max(1.0, box_w - p * 2),
                                                                         max(1.0, box_h - p * 2), rot, mw, mh)
                             text_rotate = rot
                             _log(f"       text   : {ann.text!r}")
                             _log(f"       ann.width={ann.width}  ann.height={ann.height}")
-                            _log(f"       box_w={box_w:.2f}  box_h={box_h:.2f}  (PDF pts)")
+                            _log(f"       box_w={box_w:.2f}  box_h={box_h:.2f}  (PDF pts, measured_box_h={measured_box_h:.2f})")
                             _log(f"       box_rect  : {box_rect}")
                             _log(f"       text_rect : {text_rect}")
                             _log(f"       text_rotate (insert_textbox rotate=) : {text_rotate}")
@@ -218,21 +225,27 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                 save_ok = False
                 for garbage_level in (0, 4):
                     try:
+                        print(f"[bake] saving with garbage={garbage_level}…")
                         doc.save(output_path, garbage=garbage_level, deflate=True)
                         save_ok = True
+                        print(f"[bake] save OK (garbage={garbage_level})")
                         _log(f"SAVE OK (garbage={garbage_level})")
                         break
                     except Exception as exc:
+                        print(f"[bake] save FAILED (garbage={garbage_level}): {exc}")
                         _log(f"SAVE FAILED (garbage={garbage_level}): {exc}")
                 if not save_ok:
+                    print("[bake] ERROR: PDF could not be saved – all garbage levels failed.")
                     _log("ERROR: PDF could not be saved – all garbage levels failed.")
             finally:
                 doc.close()
         except Exception as exc:
+            print(f"[bake] FATAL ERROR opening PDF: {exc}")
             _log(f"FATAL ERROR opening PDF: {exc}")
     finally:
         if _log_fh:
             _log_fh.close()
+            print(f"[bake] log file closed: {log_path}")
 
 
 # ── Shape helpers ─────────────────────────────────────────────────────────────
@@ -341,11 +354,16 @@ def _draw_text(page, ann: Annotation, cx_v: float, cy_v: float,
             box_w = max(len(text) * 5.5, 20.0)
         box_w = max(box_w, 20.0)
 
-    # Use stored height (converted to PDF points) when available; otherwise measure.
+    # Always measure the minimum height required to fit the text at this width.
+    # If a stored height (from the inline editor) is smaller than the measured
+    # minimum, the text won't fit inside insert_textbox and will be invisible.
+    # Using max() ensures the box is always tall enough to show the text while
+    # still respecting the user's sizing when it is larger.
+    _, measured_box_h = _measure_text_box(text, box_w, p, _TEXT_FONTSIZE)
     if ann.height is not None:
-        box_h = max(ann.height * ph, 10.0)
+        box_h = max(ann.height * ph, measured_box_h, 10.0)
     else:
-        _, box_h = _measure_text_box(text, box_w, p, _TEXT_FONTSIZE)
+        box_h = max(measured_box_h, 10.0)
 
     box_rect  = _text_rect(cx_v,     cy_v,     box_w,         box_h,         rot, mw, mh)
     text_rect = _text_rect(cx_v + p, cy_v + p, max(1.0, box_w - p * 2),
@@ -365,9 +383,19 @@ def _draw_text(page, ann: Annotation, cx_v: float, cy_v: float,
     # in the viewer.  Using (360-rot) reversed the direction and produced
     # upside-down text on landscape (rot=90/270) pages.
     text_rotate = rot
-    page.insert_textbox(text_rect, text, fontsize=_TEXT_FONTSIZE,
-                        fontname="helv", color=(0, 0, 0),
-                        align=0, rotate=text_rotate)
+    overflow = page.insert_textbox(text_rect, text, fontsize=_TEXT_FONTSIZE,
+                                   fontname="helv", color=(0, 0, 0),
+                                   align=0, rotate=text_rotate)
+    if overflow < 0:
+        # Text still did not fit (e.g. word-wrap produced more lines than
+        # measured_box_h estimated).  Re-measure without the stored-height
+        # constraint and retry with the freshly computed rect.
+        _, fallback_h = _measure_text_box(text, box_w, p, _TEXT_FONTSIZE)
+        fallback_rect = _text_rect(cx_v + p, cy_v + p, max(1.0, box_w - p * 2),
+                                   max(1.0, fallback_h - p * 2), rot, mw, mh)
+        page.insert_textbox(fallback_rect, text, fontsize=_TEXT_FONTSIZE,
+                            fontname="helv", color=(0, 0, 0),
+                            align=0, rotate=text_rotate)
 
 
 def _text_rect(cx_v: float, cy_v: float, bw: float, bh: float,
