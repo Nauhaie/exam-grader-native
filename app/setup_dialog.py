@@ -1,4 +1,4 @@
-"""Setup dialog: choose exam dir, students CSV, grading scheme JSON."""
+"""Setup dialog: choose a single project directory."""
 import os
 
 from PySide6.QtWidgets import (
@@ -12,56 +12,38 @@ import data_store
 class SetupDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Exam Grader — Setup")
-        self.setMinimumWidth(520)
+        self.setWindowTitle("Exam Grader — Open Project")
+        self.setMinimumWidth(540)
 
-        self._exams_dir = ""
-        self._students_csv = ""
-        self._grading_scheme = ""
+        self._project_dir = ""
 
         # Pre-fill from saved session config
         config = data_store.load_session_config()
         if config:
-            self._exams_dir = config.get("exams_dir", "")
-            self._students_csv = config.get("students_csv", "")
-            self._grading_scheme = config.get("grading_scheme", "")
+            self._project_dir = config.get("project_dir", "")
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(
             "<b>Welcome to Exam Grader</b><br>"
-            "Please select your exam files to get started."
+            "Select your project directory to get started.<br><br>"
+            "The project directory must contain:<br>"
+            "&nbsp;&nbsp;• <tt>exams/</tt> — one PDF per student, named "
+            "<tt>&lt;student_number&gt;.pdf</tt><br>"
+            "&nbsp;&nbsp;• <tt>config.json</tt> — grading scheme and export template<br>"
+            "&nbsp;&nbsp;• <tt>students.csv</tt> — student roster"
         ))
         layout.addSpacing(8)
 
         form = QFormLayout()
         layout.addLayout(form)
 
-        # Exams directory
-        self._exams_dir_edit = QLineEdit(self._exams_dir)
-        exams_btn = QPushButton("Browse…")
-        exams_btn.clicked.connect(self._browse_exams_dir)
-        exams_row = QHBoxLayout()
-        exams_row.addWidget(self._exams_dir_edit)
-        exams_row.addWidget(exams_btn)
-        form.addRow("Exams directory:", exams_row)
-
-        # Students CSV
-        self._students_csv_edit = QLineEdit(self._students_csv)
-        csv_btn = QPushButton("Browse…")
-        csv_btn.clicked.connect(self._browse_students_csv)
-        csv_row = QHBoxLayout()
-        csv_row.addWidget(self._students_csv_edit)
-        csv_row.addWidget(csv_btn)
-        form.addRow("Students CSV:", csv_row)
-
-        # Grading scheme JSON
-        self._grading_scheme_edit = QLineEdit(self._grading_scheme)
-        json_btn = QPushButton("Browse…")
-        json_btn.clicked.connect(self._browse_grading_scheme)
-        json_row = QHBoxLayout()
-        json_row.addWidget(self._grading_scheme_edit)
-        json_row.addWidget(json_btn)
-        form.addRow("Grading scheme JSON:", json_row)
+        self._dir_edit = QLineEdit(self._project_dir)
+        browse_btn = QPushButton("Browse…")
+        browse_btn.clicked.connect(self._browse)
+        dir_row = QHBoxLayout()
+        dir_row.addWidget(self._dir_edit)
+        dir_row.addWidget(browse_btn)
+        form.addRow("Project directory:", dir_row)
 
         layout.addSpacing(12)
 
@@ -69,60 +51,44 @@ class SetupDialog(QDialog):
         self._error_label.setStyleSheet("color: red;")
         layout.addWidget(self._error_label)
 
-        # Buttons
         buttons = QDialogButtonBox()
-        self._start_btn = buttons.addButton("Start Grading", QDialogButtonBox.ButtonRole.AcceptRole)
+        self._start_btn = buttons.addButton("Open Project", QDialogButtonBox.ButtonRole.AcceptRole)
         buttons.addButton("Cancel", QDialogButtonBox.ButtonRole.RejectRole)
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-    def _browse_exams_dir(self):
-        path = QFileDialog.getExistingDirectory(self, "Select Exams Directory")
+    def _browse(self):
+        path = QFileDialog.getExistingDirectory(self, "Select Project Directory",
+                                                self._dir_edit.text())
         if path:
-            self._exams_dir_edit.setText(path)
-
-    def _browse_students_csv(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Select Students CSV", "", "CSV files (*.csv)"
-        )
-        if path:
-            self._students_csv_edit.setText(path)
-
-    def _browse_grading_scheme(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Select Grading Scheme", "", "JSON files (*.json)"
-        )
-        if path:
-            self._grading_scheme_edit.setText(path)
+            self._dir_edit.setText(path)
 
     def _on_accept(self):
-        exams_dir = self._exams_dir_edit.text().strip()
-        students_csv = self._students_csv_edit.text().strip()
-        grading_scheme = self._grading_scheme_edit.text().strip()
+        project_dir = self._dir_edit.text().strip()
 
-        if not os.path.isdir(exams_dir):
-            self._error_label.setText("Exams directory does not exist.")
+        if not os.path.isdir(project_dir):
+            self._error_label.setText("Project directory does not exist.")
             return
-        if not os.path.isfile(students_csv):
-            self._error_label.setText("Students CSV file not found.")
+        if not os.path.isdir(os.path.join(project_dir, "exams")):
+            self._error_label.setText(
+                "Missing 'exams/' sub-directory inside the project directory."
+            )
             return
-        if not os.path.isfile(grading_scheme):
-            self._error_label.setText("Grading scheme JSON file not found.")
+        if not os.path.isfile(os.path.join(project_dir, "config.json")):
+            self._error_label.setText(
+                "Missing 'config.json' inside the project directory."
+            )
+            return
+        if not os.path.isfile(os.path.join(project_dir, "students.csv")):
+            self._error_label.setText(
+                "Missing 'students.csv' inside the project directory."
+            )
             return
 
-        data_store.save_session_config(exams_dir, students_csv, grading_scheme)
-        self._exams_dir = exams_dir
-        self._students_csv = students_csv
-        self._grading_scheme = grading_scheme
+        data_store.save_session_config(project_dir)
+        self._project_dir = project_dir
         self.accept()
 
-    # Public getters
-    def exams_dir(self) -> str:
-        return self._exams_dir
-
-    def students_csv(self) -> str:
-        return self._students_csv
-
-    def grading_scheme(self) -> str:
-        return self._grading_scheme
+    def project_dir(self) -> str:
+        return self._project_dir

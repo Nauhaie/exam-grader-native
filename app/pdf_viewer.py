@@ -409,6 +409,13 @@ class PDFViewerPanel(QWidget):
 
     # ── Rendering ─────────────────────────────────────────────────────────────
 
+    def _page_size(self) -> Tuple[int, int]:
+        """Return *(width, height)* of the current page pixmap, or (1, 1)."""
+        pm = self._page_label.pixmap()
+        if pm and not pm.isNull():
+            return pm.width(), pm.height()
+        return 1, 1
+
     def _show_placeholder(self):
         self._raw_pixmap = None
         self._base_pixmap = None
@@ -496,9 +503,19 @@ class PDFViewerPanel(QWidget):
             self._scroll.horizontalScrollBar().setValue(int(self._pan_hval - dx))
             self._scroll.verticalScrollBar().setValue(int(self._pan_vval - dy))
             return
-        # Hover cursor hint when pan modifier is held
+        # Hover cursor hints
         if QApplication.queryKeyboardModifiers() & _PAN_MOD:
             self._page_label.setCursor(Qt.CursorShape.OpenHandCursor)
+        elif self._drag is None and self._active_tool in (TOOL_NONE, None):
+            # Show grab cursor when hovering over a draggable annotation
+            drag = self._find_drag_target(fx, fy)
+            if drag is not None:
+                if drag.kind in ("text-resize", "circle-edge"):
+                    self._page_label.setCursor(Qt.CursorShape.SizeVerCursor)
+                else:
+                    self._page_label.setCursor(Qt.CursorShape.OpenHandCursor)
+            else:
+                self._page_label.unsetCursor()
         else:
             self._page_label.unsetCursor()
         if self._drag is not None:
@@ -563,10 +580,18 @@ class PDFViewerPanel(QWidget):
                 x1, y1 = self._line_start
                 self._line_start = None
                 self._preview_pos = None
+                if self._active_tool == TOOL_CIRCLE:
+                    # Normalise the edge point so the resize handle is always
+                    # at the visual bottom of the circle.
+                    pw, ph = self._page_size()
+                    radius_px = math.hypot((fx - x1) * pw, (fy - y1) * ph)
+                    x2, y2 = x1, y1 + radius_px / ph
+                else:
+                    x2, y2 = fx, fy
                 self._annotations.append(Annotation(
                     page=self._current_page,
                     type=self._active_tool,
-                    x=x1, y=y1, x2=fx, y2=fy,
+                    x=x1, y=y1, x2=x2, y2=y2,
                 ))
                 self._rebuild_base_and_display()
                 self.annotations_changed.emit()
@@ -622,8 +647,12 @@ class PDFViewerPanel(QWidget):
             ann.x,  ann.y  = cl(d.orig_x  + dx), cl(d.orig_y  + dy)
             ann.x2, ann.y2 = cl(d.orig_x2 + dx), cl(d.orig_y2 + dy)
         elif d.kind == "circle-edge":
-            # Use offset from the original edge point so there is no jump
-            ann.x2, ann.y2 = cl(d.orig_x2 + dx), cl(d.orig_y2 + dy)
+            # Keep the resize handle always at the visual bottom.
+            # New radius = euclidean distance from center to current mouse position.
+            pw, ph = self._page_size()
+            radius_px = math.hypot((fx - d.orig_x) * pw, (fy - d.orig_y) * ph)
+            ann.x2 = d.orig_x
+            ann.y2 = cl(d.orig_y + radius_px / ph)
         elif d.kind == "circle-move":
             ann.x,  ann.y  = cl(d.orig_x  + dx), cl(d.orig_y  + dy)
             ann.x2, ann.y2 = cl(d.orig_x2 + dx), cl(d.orig_y2 + dy)
@@ -659,10 +688,11 @@ class PDFViewerPanel(QWidget):
             elif ann.type == "circle" and ann.x2 is not None:
                 cx, cy = ann.x * w, ann.y * h
                 radius = math.hypot((ann.x2 - ann.x) * w, (ann.y2 - ann.y) * h)
-                ex, ey = ann.x2 * w, ann.y2 * h
-                if math.hypot(mx - ex, my - ey) <= tol:
+                # Resize handle is always drawn at the visual bottom of the circle
+                bx, by = cx, cy + radius
+                if math.hypot(mx - bx, my - by) <= tol:
                     return _DragState("circle-edge", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
-                # Only grab near the circumference, not the whole filled interior
+                # Move: grab near the circumference (but not the handle area)
                 if abs(math.hypot(mx - cx, my - cy) - radius) <= tol:
                     return _DragState("circle-move", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
 

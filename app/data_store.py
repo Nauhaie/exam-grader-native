@@ -6,18 +6,53 @@ from typing import Dict, List, Optional
 from models import Annotation, Exercise, GradingScheme, Student, Subquestion
 
 
-# Resolve data directory relative to this file's location
+# ── App-level session config (persists which project dir was last opened) ─────
+
 _APP_DIR = os.path.dirname(os.path.abspath(__file__))
-_PROJECT_DIR = os.path.dirname(_APP_DIR)
-DATA_DIR = os.path.join(_PROJECT_DIR, "data")
-SESSION_CONFIG_PATH = os.path.join(DATA_DIR, "session_config.json")
-GRADES_PATH = os.path.join(DATA_DIR, "grades.json")
-ANNOTATIONS_DIR = os.path.join(DATA_DIR, "annotations")
+_APP_DATA_DIR = os.path.join(os.path.dirname(_APP_DIR), "data")
+SESSION_CONFIG_PATH = os.path.join(_APP_DATA_DIR, "session_config.json")
+
+# ── Project-dir-derived paths (set via set_project_dir) ──────────────────────
+
+_active_project_dir: Optional[str] = None
+DATA_DIR: str = ""
+GRADES_PATH: str = ""
+ANNOTATIONS_DIR: str = ""
+EXPORT_DIR: str = ""
+ANNOTATED_EXPORT_DIR: str = ""
+
+
+def set_project_dir(project_dir: str) -> None:
+    """Configure all data paths to use *project_dir* as the root."""
+    global _active_project_dir, DATA_DIR, GRADES_PATH, ANNOTATIONS_DIR
+    global EXPORT_DIR, ANNOTATED_EXPORT_DIR
+    _active_project_dir = os.path.abspath(project_dir)
+    DATA_DIR = os.path.join(_active_project_dir, "data")
+    GRADES_PATH = os.path.join(DATA_DIR, "grades.json")
+    ANNOTATIONS_DIR = os.path.join(DATA_DIR, "annotations")
+    EXPORT_DIR = os.path.join(_active_project_dir, "export")
+    ANNOTATED_EXPORT_DIR = os.path.join(EXPORT_DIR, "annotated")
+
+
+def get_project_dir() -> Optional[str]:
+    return _active_project_dir
+
+
+def _require_project_dir(fn_name: str) -> None:
+    """Raise RuntimeError if no project directory has been configured."""
+    if not _active_project_dir:
+        raise RuntimeError(
+            f"data_store.{fn_name}() called before set_project_dir(). "
+            "Open a project first."
+        )
 
 
 def ensure_data_dirs():
+    _require_project_dir("ensure_data_dirs")
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(ANNOTATIONS_DIR, exist_ok=True)
+    os.makedirs(EXPORT_DIR, exist_ok=True)
+    os.makedirs(ANNOTATED_EXPORT_DIR, exist_ok=True)
 
 
 # ── Session config ────────────────────────────────────────────────────────────
@@ -29,15 +64,37 @@ def load_session_config() -> Optional[dict]:
         return json.load(f)
 
 
-def save_session_config(exams_dir: str, students_csv: str, grading_scheme: str):
-    ensure_data_dirs()
-    config = {
-        "exams_dir": os.path.abspath(exams_dir),
-        "students_csv": os.path.abspath(students_csv),
-        "grading_scheme": os.path.abspath(grading_scheme),
-    }
+def save_session_config(project_dir: str):
+    os.makedirs(_APP_DATA_DIR, exist_ok=True)
+    config = {"project_dir": os.path.abspath(project_dir)}
     with open(SESSION_CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)
+
+
+# ── Project config.json (grading scheme + export template) ───────────────────
+
+def load_project_config(project_dir: str) -> dict:
+    """Read *project_dir*/config.json and return the raw dict."""
+    path = os.path.join(project_dir, "config.json")
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def load_grading_scheme_from_config(config_data: dict) -> GradingScheme:
+    """Build a GradingScheme from a parsed config dict."""
+    exercises = []
+    for ex_data in config_data.get("exercises", []):
+        subquestions = [
+            Subquestion(name=sq["name"], max_points=float(sq["max_points"]))
+            for sq in ex_data.get("subquestions", [])
+        ]
+        exercises.append(Exercise(name=ex_data["name"], subquestions=subquestions))
+    return GradingScheme(exercises=exercises)
+
+
+def get_export_filename_template(config_data: dict) -> str:
+    """Return the export filename template, with a sensible default."""
+    return config_data.get("export_filename_template", "{student_number}_annotated")
 
 
 # ── Students CSV ──────────────────────────────────────────────────────────────
@@ -59,25 +116,11 @@ def load_students(csv_path: str) -> List[Student]:
     return students
 
 
-# ── Grading scheme JSON ───────────────────────────────────────────────────────
-
-def load_grading_scheme(json_path: str) -> GradingScheme:
-    with open(json_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    exercises = []
-    for ex_data in data.get("exercises", []):
-        subquestions = [
-            Subquestion(name=sq["name"], max_points=float(sq["max_points"]))
-            for sq in ex_data.get("subquestions", [])
-        ]
-        exercises.append(Exercise(name=ex_data["name"], subquestions=subquestions))
-    return GradingScheme(exercises=exercises)
-
-
 # ── Grades ────────────────────────────────────────────────────────────────────
 
 def load_grades() -> Dict[str, dict]:
     """Return { student_number: { subquestion_name: points } }"""
+    _require_project_dir("load_grades")
     if not os.path.exists(GRADES_PATH):
         return {}
     with open(GRADES_PATH, "r", encoding="utf-8") as f:
@@ -85,6 +128,7 @@ def load_grades() -> Dict[str, dict]:
 
 
 def save_grades(grades: Dict[str, dict]):
+    _require_project_dir("save_grades")
     ensure_data_dirs()
     with open(GRADES_PATH, "w", encoding="utf-8") as f:
         json.dump(grades, f, indent=2)
@@ -93,6 +137,7 @@ def save_grades(grades: Dict[str, dict]):
 # ── Annotations ───────────────────────────────────────────────────────────────
 
 def load_annotations(student_number: str) -> List[Annotation]:
+    _require_project_dir("load_annotations")
     path = os.path.join(ANNOTATIONS_DIR, f"{student_number}.json")
     if not os.path.exists(path):
         return []
@@ -114,6 +159,7 @@ def load_annotations(student_number: str) -> List[Annotation]:
 
 
 def save_annotations(student_number: str, annotations: List[Annotation]):
+    _require_project_dir("save_annotations")
     ensure_data_dirs()
     path = os.path.join(ANNOTATIONS_DIR, f"{student_number}.json")
     data = []

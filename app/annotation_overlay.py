@@ -226,6 +226,13 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
         painter.setPen(QPen(_RED, stroke))
         radius = int(math.hypot(ann.x2 * w - cx, ann.y2 * h - cy))
         painter.drawEllipse(cx - radius, cy - radius, radius * 2, radius * 2)
+        # Resize handle always at the visual bottom of the circle
+        hs = max(4, round(_RESIZE_HANDLE * s))
+        bx = cx
+        by = cy + radius
+        painter.setPen(QPen(QColor(70, 130, 230), max(1, round(1.5 * s))))
+        painter.setBrush(QColor(70, 130, 230, 200))
+        painter.drawEllipse(bx - hs // 2, by - hs // 2, hs, hs)
 
 
 def _draw_arrow(painter: QPainter, x1: int, y1: int, x2: int, y2: int,
