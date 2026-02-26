@@ -11,7 +11,7 @@ from typing import List, Optional, Tuple
 
 from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtGui import (
-    QColor, QFont, QFontMetrics, QPainter, QPen, QPixmap, QPolygon,
+    QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen, QPixmap, QPolygon,
 )
 
 from models import Annotation
@@ -181,14 +181,21 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
         painter.drawLine(cx + rc, cy - rc, cx - rc, cy + rc)
 
     elif ann.type == "tilde":
-        font = QFont()
-        font.setPointSize(max(4, round(28 * s)))
-        font.setBold(True)
-        painter.setFont(font)
-        fm = QFontMetrics(font)
-        painter.setPen(QPen(_ORANGE, thick))
-        tw = fm.horizontalAdvance("~")
-        painter.drawText(cx - tw // 2, cy + fm.ascent() // 2, "~")
+        amp = max(3, round(5 * s))          # wave amplitude (px)
+        ww  = max(20, round(36 * s))        # total wave width (px)
+        pen_w = max(2, round(3 * s))
+        painter.setPen(QPen(_ORANGE, pen_w, Qt.PenStyle.SolidLine,
+                            Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        path = QPainterPath()
+        # S-curve: left-centre → up arc → centre → down arc → right-centre
+        path.moveTo(cx - ww // 2, cy)
+        path.cubicTo(cx - ww // 4, cy - amp,
+                     cx,           cy - amp,
+                     cx,           cy)
+        path.cubicTo(cx,           cy + amp,
+                     cx + ww // 4, cy + amp,
+                     cx + ww // 2, cy)
+        painter.drawPath(path)
 
     elif ann.type == "text" and ann.text:
         font = QFont()
