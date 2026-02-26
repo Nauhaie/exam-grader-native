@@ -309,7 +309,8 @@ class GradingPanel(QWidget):
             if ex_name not in seen_ex:
                 seen_ex.add(ex_name)
                 span = len(ex_groups[ex_name])
-                self._table.setSpan(0, col, 1, span)
+                if span > 1:
+                    self._table.setSpan(0, col, 1, span)
                 self._table.setItem(0, col, _hdr(ex_name, _BG_EX, bold=True))
             # Row 1: subquestion name
             self._table.setItem(1, col, _hdr(sq.name, _BG_SQ))
@@ -468,7 +469,8 @@ class GradingPanel(QWidget):
             else:
                 text = ""
 
-            self._table.setSpan(ex_row, first_col, 1, span)
+            if span > 1:
+                self._table.setSpan(ex_row, first_col, 1, span)
             self._table.setItem(ex_row, first_col, _ex_item(text, _BG_EX))
 
     def _apply_highlight(self):
@@ -672,12 +674,13 @@ class GradingPanel(QWidget):
         ex_groups: Dict[str, List[int]] = {}
         for ci, ex_name in enumerate(self._exercises_for_sq):
             ex_groups.setdefault(ex_name, []).append(ci)
-        seen: set = set()
+        seen_ex: set = set()
         for ci, ex_name in enumerate(self._exercises_for_sq):
-            if ex_name not in seen:
-                seen.add(ex_name)
+            if ex_name not in seen_ex:
+                seen_ex.add(ex_name)
                 span = len(ex_groups[ex_name])
-                self._fz_header.setSpan(0, sq_start + ci, 1, span)
+                if span > 1:
+                    self._fz_header.setSpan(0, sq_start + ci, 1, span)
 
         # Left: no spans needed (only 2 plain-text columns)
         self._fz_left.clearSpans()
