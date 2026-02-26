@@ -1,0 +1,65 @@
+{
+  "configured": true,
+  "students": [
+    {
+      "student_number": "12345",
+      "last_name": "Dupont",
+      "first_name": "Jean"
+    },
+    {
+      "student_number": "67890",
+      "last_name": "Martin",
+      "first_name": "Marie"
+    },
+    {
+      "student_number": "11111",
+      "last_name": "Bernard",
+      "first_name": "Pierre"
+    },
+    {
+      "student_number": "22222",
+      "last_name": "Petit",
+      "first_name": "Sophie"
+    },
+    {
+      "student_number": "33333",
+      "last_name": "Moreau",
+      "first_name": "Thomas"
+    }
+  ],
+  "grading_scheme": {
+    "exercises": [
+      {
+        "name": "Exercise 1",
+        "subquestions": [
+          {
+            "name": "1a",
+            "max_points": 3.0
+          },
+          {
+            "name": "1b",
+            "max_points": 5.0
+          }
+        ]
+      },
+      {
+        "name": "Exercise 2",
+        "subquestions": [
+          {
+            "name": "2a",
+            "max_points": 4.0
+          },
+          {
+            "name": "2b",
+            "max_points": 2.0
+          },
+          {
+            "name": "2c",
+            "max_points": 6.0
+          }
+        ]
+      }
+    ]
+  },
+  "exams_dir": "/app/sample_data/exams"
+}

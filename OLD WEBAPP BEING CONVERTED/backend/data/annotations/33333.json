@@ -1,0 +1,122 @@
+[
+  {
+    "id": "b6551710-c591-4b64-b217-8be7f2f901fc",
+    "student_number": "33333",
+    "page": 1,
+    "type": "checkmark",
+    "x": 0.23289315726290516,
+    "y": 0.2672390982218459,
+    "text": null,
+    "x2": null,
+    "y2": null,
+    "width": null
+  },
+  {
+    "id": "48c7a9c6-f437-49e3-b6eb-27c17c724b9c",
+    "student_number": "33333",
+    "page": 1,
+    "type": "checkmark",
+    "x": 0.35834333733493395,
+    "y": 0.4255794877222693,
+    "text": null,
+    "x2": null,
+    "y2": null,
+    "width": null
+  },
+  {
+    "id": "c64b017c-26fd-4eba-bb75-0eb13cb81482",
+    "student_number": "33333",
+    "page": 1,
+    "type": "checkmark",
+    "x": 0.4189675870348139,
+    "y": 0.6431916807790008,
+    "text": null,
+    "x2": null,
+    "y2": null,
+    "width": null
+  },
+  {
+    "id": "3529269d-a86f-4a7d-a634-cc5f321084ba",
+    "student_number": "33333",
+    "page": 1,
+    "type": "checkmark",
+    "x": 0.44417767106842737,
+    "y": 0.9200756773920407,
+    "text": null,
+    "x2": null,
+    "y2": null,
+    "width": null
+  },
+  {
+    "id": "e950d4db-7cbc-4e7f-9477-5aa324a8ddff",
+    "student_number": "33333",
+    "page": 1,
+    "type": "checkmark",
+    "x": 0.8421368547418968,
+    "y": 0.738026566469094,
+    "text": null,
+    "x2": null,
+    "y2": null,
+    "width": null
+  },
+  {
+    "id": "dd99a0ed-c175-4770-8a47-ef1722ce34ba",
+    "student_number": "33333",
+    "page": 1,
+    "type": "checkmark",
+    "x": 0.7983193277310925,
+    "y": 0.8497962531752752,
+    "text": null,
+    "x2": null,
+    "y2": null,
+    "width": null
+  },
+  {
+    "id": "90812332-ce14-42d0-b798-f67bad6bff3e",
+    "student_number": "33333",
+    "page": 1,
+    "type": "checkmark",
+    "x": 0.801920768307323,
+    "y": 0.6042416384419983,
+    "text": null,
+    "x2": null,
+    "y2": null,
+    "width": null
+  },
+  {
+    "id": "aa9ba272-f378-4609-a229-ab8e3b4f7897",
+    "student_number": "33333",
+    "page": 1,
+    "type": "cross",
+    "x": 0.6902761104441777,
+    "y": 0.6321840601185436,
+    "text": null,
+    "x2": null,
+    "y2": null,
+    "width": null
+  },
+  {
+    "id": "41ce9ff6-fe7f-45b2-978d-1238af2304bc",
+    "student_number": "33333",
+    "page": 1,
+    "type": "cross",
+    "x": 0.7665066026410564,
+    "y": 0.6448851608806097,
+    "text": null,
+    "x2": null,
+    "y2": null,
+    "width": null
+  },
+  {
+    "id": "7a63fc80-64c1-4828-a648-aae990769838",
+    "student_number": "33333",
+    "page": 1,
+    "type": "checkmark",
+    "x": 0.8613445378151261,
+    "y": 0.6635134419983065,
+    "text": null,
+    "x2": null,
+    "y2": null,
+    "width": null
+  }
+]

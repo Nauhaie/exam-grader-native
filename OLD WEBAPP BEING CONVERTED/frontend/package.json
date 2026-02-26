@@ -1,0 +1,34 @@
+{
+  "name": "exam-grader-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@tanstack/react-table": "^8.11.2",
+    "@testing-library/dom": "^10.4.1",
+    "axios": "^1.6.5",
+    "jszip": "^3.10.1",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^3.11.174",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react": "^18.2.48",
+    "@types/react-dom": "^18.2.18",
+    "@vitejs/plugin-react": "^4.2.1",
+    "jsdom": "^28.1.0",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.11",
+    "vitest": "^4.0.18"
+  }
+}
