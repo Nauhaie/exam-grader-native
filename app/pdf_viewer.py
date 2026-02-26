@@ -159,6 +159,9 @@ class PDFViewerPanel(QWidget):
     def deselect_tool(self):
         self.set_active_tool(TOOL_NONE)
 
+    def get_annotations(self) -> List[Annotation]:
+        return self._annotations
+
     # ── Internal ──────────────────────────────────────────────────────────────
 
     def _show_placeholder(self):
