@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 import fitz  # pymupdf
-from PySide6.QtCore import QObject, QEvent, QPoint, Qt, Signal
+from PySide6.QtCore import QObject, QEvent, QPoint, QRect, Qt, Signal
 from PySide6.QtGui import QCursor, QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QLineEdit,
@@ -86,8 +86,8 @@ class InlineTextEdit(QPlainTextEdit):
 
     def _adjust_height(self):
         """Resize widget height to match document content (no scrollbars)."""
-        # frameWidth()*2 for the border; +4 for top/bottom content margins
-        doc_h = int(self.document().size().height()) + self.frameWidth() * 2 + 4
+        # frameWidth()*2 for the border; +8 for top+bottom document content margins
+        doc_h = int(self.document().size().height()) + self.frameWidth() * 2 + 8
         # Minimum: one line of text height based on current font
         min_h = self.fontMetrics().height() + self.frameWidth() * 2 + 8
         new_h = max(min_h, doc_h)
@@ -127,6 +127,13 @@ class _ToolShortcutFilter(QObject):
     def __init__(self, viewer: "PDFViewerPanel", parent=None):
         super().__init__(parent)
         self._viewer = viewer
+
+    def _mouse_over_pdf(self) -> bool:
+        """Return True when the mouse pointer is currently over the PDF scroll area."""
+        scroll = self._viewer._scroll
+        top_left = scroll.mapToGlobal(scroll.rect().topLeft())
+        global_rect = QRect(top_left, scroll.size())
+        return global_rect.contains(QCursor.pos())
 
     def eventFilter(self, obj, event):
         if event.type() != QEvent.Type.KeyPress:
@@ -179,19 +186,18 @@ class _ToolShortcutFilter(QObject):
             self._viewer.student_next_requested.emit()
             return True
 
-        # ── Plain Left / Right → navigate page only when view fully fits ──────
-        # If the horizontal scroll bar has nothing to scroll the page fits
-        # horizontally, so the arrow key should flip the page rather than
-        # attempt to scroll (there is nothing to scroll).
+        # ── Plain Left / Right → navigate page when pointer is over the PDF
+        #    view AND the page fits entirely (no scrollbars in either direction).
         if not mods and key in (Qt.Key.Key_Left, Qt.Key.Key_Right):
-            hbar = self._viewer._scroll.horizontalScrollBar()
-            if hbar.maximum() == 0:
-                if key == Qt.Key.Key_Left:
-                    self._viewer.prev_page()
-                else:
-                    self._viewer.next_page()
-                return True
-            # Scrollbar is active → let the scroll area handle it naturally.
+            if self._mouse_over_pdf():
+                hbar = self._viewer._scroll.horizontalScrollBar()
+                vbar = self._viewer._scroll.verticalScrollBar()
+                if hbar.maximum() == 0 and vbar.maximum() == 0:
+                    if key == Qt.Key.Key_Left:
+                        self._viewer.prev_page()
+                    else:
+                        self._viewer.next_page()
+                    return True
             return False
 
         return False

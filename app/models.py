@@ -28,6 +28,13 @@ class Annotation:
 
 
 @dataclass
+class GradingSettings:
+    max_note: float = 20.0          # maximum grade (e.g. 20 for French system)
+    rounding: float = 0.5           # round to nearest multiple of this value
+    score_total: Optional[float] = None  # denominator; None = sum of all exam points
+
+
+@dataclass
 class Subquestion:
     name: str
     max_points: float

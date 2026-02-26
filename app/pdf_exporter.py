@@ -108,7 +108,7 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
             elif ann.type == "tilde":
                 _draw_tilde(page, cx_v, cy_v, rot, to_draw)
             elif ann.type == "text" and ann.text:
-                _draw_text(page, ann, cx_v, cy_v, pw, rot, mw, mh)
+                _draw_text(page, ann, cx_v, cy_v, pw, ph, rot, mw, mh)
             elif ann.type == "line" and ann.x2 is not None and ann.y2 is not None:
                 p1 = to_draw(cx_v, cy_v)
                 p2 = to_draw(ann.x2 * pw, ann.y2 * ph)
