@@ -79,8 +79,8 @@ class InlineTextEdit(QPlainTextEdit):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setStyleSheet(
-            f"background: #ffff99; border: 1px solid #888;"
-            f" font-size: {font_pt}pt; font-weight: bold; padding: 1px;"
+            f"QPlainTextEdit {{ background-color: #ffff99; border: 1px solid #888;"
+            f" font-size: {font_pt}pt; font-weight: bold; padding: 1px; }}"
         )
         self.document().contentsChanged.connect(self._adjust_height)
 
@@ -88,7 +88,9 @@ class InlineTextEdit(QPlainTextEdit):
         """Resize widget height to match document content (no scrollbars)."""
         # frameWidth()*2 for the border; +4 for top/bottom content margins
         doc_h = int(self.document().size().height()) + self.frameWidth() * 2 + 4
-        new_h = max(40, doc_h)
+        # Minimum: one line of text height based on current font
+        min_h = self.fontMetrics().height() + self.frameWidth() * 2 + 8
+        new_h = max(min_h, doc_h)
         if self.height() != new_h:
             self.resize(self.width(), new_h)
 
@@ -745,13 +747,14 @@ class PDFViewerPanel(QWidget):
 
         editor = InlineTextEdit(font_pt, vp)
         editor.setMinimumWidth(_INLINE_EDITOR_MIN_W)
-        # For existing annotations, match the rendered box dimensions exactly
+        # For existing annotations, match the rendered box width; let
+        # _adjust_height set the height correctly from document content.
         if edit_idx >= 0:
             ann = self._annotations[edit_idx]
             rect = annotation_overlay.get_text_box_rect(ann, pm.width(), pm.height())
             if rect:
                 editor.resize(max(rect.width(), _INLINE_EDITOR_MIN_W),
-                              max(rect.height(), 40))
+                              rect.height())
             else:
                 editor.resize(_INLINE_EDITOR_WIDTH, _INLINE_EDITOR_HEIGHT)
         else:
@@ -768,16 +771,19 @@ class PDFViewerPanel(QWidget):
             self._inline_editor = None
             editor.deleteLater()
             if text.strip():
+                # Record both width and height as fractions of the page so the
+                # rendered box always matches the editor dimensions exactly.
+                width_frac = editor.width() / pm.width() if pm.width() > 0 else None
+                height_frac = editor.height() / pm.height() if pm.height() > 0 else None
                 if edit_idx >= 0:
                     self._annotations[edit_idx].text = text.strip()
+                    self._annotations[edit_idx].width = width_frac
+                    self._annotations[edit_idx].height = height_frac
                 else:
-                    # Record editor width as a fraction of the page so the
-                    # rendered box matches the editor width consistently.
-                    width_frac = editor.width() / pm.width() if pm.width() > 0 else None
                     self._annotations.append(Annotation(
                         page=self._current_page, type="text",
                         x=fx, y=fy, text=text.strip(),
-                        width=width_frac,
+                        width=width_frac, height=height_frac,
                     ))
                 self._rebuild_base_and_display()
                 self.annotations_changed.emit()

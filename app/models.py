@@ -24,6 +24,7 @@ class Annotation:
     x2: Optional[float] = None   # end point (line/arrow) or edge point (circle)
     y2: Optional[float] = None   # end point (line/arrow) or edge point (circle)
     width: Optional[float] = None  # text box width as fraction of page width
+    height: Optional[float] = None  # text box height as fraction of page height
 
 
 @dataclass
