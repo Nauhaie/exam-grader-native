@@ -177,11 +177,18 @@ def _measure_text_box(text: str, box_w: float, p: float = _TEXT_PAD_PT,
 
     Uses PyMuPDF's own font metrics so the result matches ``insert_textbox``
     exactly (no more yellow boxes with missing text).
+
+    The formula is derived from insert_textbox internals:
+      required_height = n_lines * line_h + |descender| * fontsize
+    where line_h = fontsize * (ascender - descender).
     """
     inner_w = max(1.0, box_w - p * 2)
-    line_h = fontsize * 1.2          # default leading used by insert_textbox
     try:
         font = fitz.Font("helv")
+        # Per-line height used by insert_textbox (ascender + |descender|)
+        line_h = fontsize * (font.ascender - font.descender)
+        # One-time bottom-of-last-line overhead (= |descender| * fontsize)
+        extra_h = fontsize * abs(font.descender)
         total_lines = 0
         for para in text.split("\n"):
             words = para.split() if para.strip() else []
@@ -194,13 +201,16 @@ def _measure_text_box(text: str, box_w: float, p: float = _TEXT_PAD_PT,
                 ww = font.text_length(word + " ", fontsize=fontsize)
                 if cur_w > 0 and cur_w + ww > inner_w:
                     n_lines += 1
-                    cur_w = ww   # start new line with this word
+                    cur_w = ww
                 else:
                     cur_w += ww
             total_lines += n_lines
+        box_h = max(20.0, total_lines * line_h + extra_h + p * 2)
     except Exception:
+        # Fallback: approximate ascender+descender ratio for a typical font
+        # (1.374 actual) plus per-line bottom padding (~0.3), giving ~1.7.
         total_lines = max(1, len(text.split("\n")))
-    box_h = max(20.0, total_lines * line_h + p * 2)
+        box_h = max(20.0, total_lines * fontsize * 1.7 + p * 2)
     return box_w, box_h
 
 

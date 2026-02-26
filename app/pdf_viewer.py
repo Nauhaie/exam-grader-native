@@ -767,9 +767,12 @@ class PDFViewerPanel(QWidget):
 
         editor = InlineTextEdit(font_pt, vp)
         editor.setMinimumWidth(_INLINE_EDITOR_MIN_W)
-        # For existing annotations, match the rendered box width; let
-        # _adjust_height set the height correctly from document content.
+        editor.move(pos)
         if edit_idx >= 0:
+            # Load text first so _adjust_height fires, then override the size to
+            # exactly match the rendered box so the editor sits perfectly on top.
+            editor.setPlainText(self._annotations[edit_idx].text or "")
+            editor.selectAll()
             ann = self._annotations[edit_idx]
             rect = annotation_overlay.get_text_box_rect(ann, pm.width(), pm.height())
             if rect:
@@ -779,10 +782,6 @@ class PDFViewerPanel(QWidget):
                 editor.resize(_INLINE_EDITOR_WIDTH, _INLINE_EDITOR_HEIGHT)
         else:
             editor.resize(_INLINE_EDITOR_WIDTH, _INLINE_EDITOR_HEIGHT)
-        editor.move(pos)
-        if edit_idx >= 0:
-            editor.setPlainText(self._annotations[edit_idx].text or "")
-            editor.selectAll()
         editor.show()
         editor.setFocus()
         self._inline_editor = editor

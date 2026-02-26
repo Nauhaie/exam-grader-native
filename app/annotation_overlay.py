@@ -214,6 +214,7 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
         bg = QRect(cx, cy, bw, bh)
         painter.fillRect(bg, QColor(255, 255, 0, 128))
         painter.setPen(QPen(QColor("black"), 1))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(bg)
         painter.drawText(QRect(cx + p, cy + p, bw - p * 2, bh - p * 2),
                          Qt.TextFlag.TextWordWrap, ann.text)

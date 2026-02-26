@@ -2,7 +2,7 @@
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor, QFont, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLineEdit,
     QPushButton,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QTableView,
     QTableWidget,
     QTableWidgetItem,
@@ -28,6 +30,38 @@ _BG_EX   = QColor(180, 198, 230)   # exercise name row
 _BG_SQ   = QColor(210, 224, 245)   # subquestion name row
 _BG_MAX  = QColor(235, 242, 252)   # max-points row
 _BG_MISC = QColor(215, 215, 215)   # non-grade fixed columns (Student, Number, …)
+
+_HIGHLIGHT_COLOR = QColor(30, 100, 220)   # border colour for the current-student row
+
+
+class _HighlightDelegate(QStyledItemDelegate):
+    """Draws a 2-px coloured border around each cell of the highlighted row.
+
+    The selection background is suppressed so the grade-based cell colours are
+    always visible regardless of focus state.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._highlight_row: int = -1
+
+    def set_highlight_row(self, row: int):
+        self._highlight_row = row
+
+    def paint(self, painter, option: QStyleOptionViewItem, index):
+        # Suppress the built-in selection fill so grade colours are not overridden.
+        opt = QStyleOptionViewItem(option)
+        opt.state &= ~opt.state.__class__.State_Selected
+        super().paint(painter, opt, index)
+
+        if index.row() == self._highlight_row:
+            painter.save()
+            painter.setPen(QPen(_HIGHLIGHT_COLOR, 2))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            # Shrink by 1 px so the 2-px pen stays fully inside the cell
+            # boundary and does not affect row height or column width.
+            painter.drawRect(option.rect.adjusted(1, 1, -1, -1))
+            painter.restore()
 
 
 class GradingPanel(QWidget):
@@ -84,6 +118,12 @@ class GradingPanel(QWidget):
         self._table.verticalHeader().setVisible(False)
         self._table.itemChanged.connect(self._on_item_changed)
         self._table.cellClicked.connect(self._on_cell_clicked)
+
+        # Delegate draws a border around the current student's row instead of
+        # changing background colours (which would override grade colouring).
+        self._highlight_delegate = _HighlightDelegate(self._table)
+        self._table.setItemDelegate(self._highlight_delegate)
+
         layout.addWidget(self._table)
 
         # ── Frozen overlays (sticky header rows + Student/Number columns) ─────
@@ -115,6 +155,9 @@ class GradingPanel(QWidget):
         # Click on frozen left selects the student
         self._fz_left.clicked.connect(
             lambda idx: self._on_cell_clicked(idx.row(), idx.column()))
+        # The frozen left panel also gets the highlight delegate so the border
+        # shows on the Name/Number columns too.
+        self._fz_left.setItemDelegate(self._highlight_delegate)
 
         # Sync scrolling: main table → frozen overlays
         self._table.horizontalScrollBar().valueChanged.connect(
@@ -475,17 +518,26 @@ class GradingPanel(QWidget):
 
     def _apply_highlight(self):
         if not self._current_student:
+            self._highlight_delegate.set_highlight_row(-1)
+            self._table.viewport().update()
+            self._fz_left.viewport().update()
             return
         filtered = self._filtered_students()
         for row_idx, student in enumerate(filtered):
             if student.student_number == self._current_student.student_number:
                 r = _HEADER_ROWS + row_idx
-                self._table.selectRow(r)
+                self._highlight_delegate.set_highlight_row(r)
+                self._table.clearSelection()
+                self._table.viewport().update()
+                self._fz_left.viewport().update()
                 self._table.scrollToItem(
                     self._table.item(r, 0),
                     QAbstractItemView.ScrollHint.EnsureVisible,
                 )
                 return
+        self._highlight_delegate.set_highlight_row(-1)
+        self._table.viewport().update()
+        self._fz_left.viewport().update()
 
     def _update_row_totals(self, row: int, student: Student):
         sq_count = len(self._subquestions)
