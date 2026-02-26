@@ -7,10 +7,18 @@ import openpyxl
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QSplitter,
+    QVBoxLayout,
+    QWidget,
 )
 
 import data_store
@@ -19,6 +27,49 @@ from grading_panel import GradingPanel
 from models import Student
 from pdf_viewer import PDFViewerPanel
 from setup_dialog import SetupDialog
+
+
+class _FilenameTemplateDialog(QDialog):
+    """Dialog to enter a PDF filename template with clickable field-insert buttons."""
+
+    def __init__(self, available_fields: list, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Filename Template")
+        self.setMinimumWidth(460)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Output filename template (without <i>.pdf</i>):"))
+
+        self._edit = QLineEdit("{student_number}_annotated")
+        layout.addWidget(self._edit)
+
+        layout.addWidget(QLabel("Click a field to insert it at the cursor position:"))
+
+        btn_widget = QWidget()
+        btn_layout = QHBoxLayout(btn_widget)
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.setSpacing(4)
+        for field in available_fields:
+            btn = QPushButton("{" + field + "}")
+            btn.setToolTip(f"Insert {{{field}}} into the template")
+            btn.clicked.connect(lambda checked, f=field: self._insert(f))
+            btn_layout.addWidget(btn)
+        btn_layout.addStretch()
+        layout.addWidget(btn_widget)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _insert(self, field: str):
+        self._edit.insert("{" + field + "}")
+        self._edit.setFocus()
+
+    def template(self) -> str:
+        return self._edit.text().strip() or "{student_number}_annotated"
 
 
 class MainWindow(QMainWindow):
@@ -194,24 +245,16 @@ class MainWindow(QMainWindow):
             return
 
         # Ask for a filename template
-        from PySide6.QtWidgets import QInputDialog
         extra_keys = []
         for s in self._students:
             for k in s.extra_fields:
                 if k not in extra_keys:
                     extra_keys.append(k)
-        hint = "  Available: {student_number}, {last_name}, {first_name}"
-        if extra_keys:
-            hint += ", " + ", ".join(f"{{{k}}}" for k in extra_keys)
-        template, ok = QInputDialog.getText(
-            self,
-            "Filename Template",
-            f"Output filename template (without .pdf):\n{hint}",
-            text="{student_number}_annotated",
-        )
-        if not ok:
+        all_fields = ["student_number", "last_name", "first_name"] + extra_keys
+        dlg = _FilenameTemplateDialog(all_fields, self)
+        if not dlg.exec():
             return
-        template = template.strip() or "{student_number}_annotated"
+        template = dlg.template()
 
         # Flush current student's annotations so the export is up-to-date
         if self._current_student:

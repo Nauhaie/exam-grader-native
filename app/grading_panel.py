@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLineEdit,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -53,6 +54,12 @@ class GradingPanel(QWidget):
         self._search.setPlaceholderText("Filter students by name or number…")
         self._search.textChanged.connect(self._rebuild_table)
         top.addWidget(self._search)
+
+        clear_btn = QPushButton("✕")
+        clear_btn.setToolTip("Clear filter")
+        clear_btn.setFixedWidth(28)
+        clear_btn.clicked.connect(self._search.clear)
+        top.addWidget(clear_btn)
 
         self._extra_cb = QCheckBox("Extra fields")
         self._extra_cb.setToolTip("Show/hide additional CSV columns")
@@ -339,14 +346,14 @@ class GradingPanel(QWidget):
             return
         filtered = self._filtered_students()
         for row_idx, student in enumerate(filtered):
-            r = _HEADER_ROWS + row_idx
-            is_current = student.student_number == self._current_student.student_number
-            for col in range(self._table.columnCount()):
-                item = self._table.item(r, col)
-                if item:
-                    f = item.font()
-                    f.setBold(is_current)
-                    item.setFont(f)
+            if student.student_number == self._current_student.student_number:
+                r = _HEADER_ROWS + row_idx
+                self._table.selectRow(r)
+                self._table.scrollToItem(
+                    self._table.item(r, 0),
+                    QAbstractItemView.ScrollHint.EnsureVisible,
+                )
+                return
 
     def _update_row_totals(self, row: int, student: Student):
         sq_count = len(self._subquestions)
