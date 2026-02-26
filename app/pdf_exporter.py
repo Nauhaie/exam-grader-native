@@ -80,141 +80,159 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
 
     If *log_path* is given, write a human-readable debug log alongside the PDF
     with full coordinate details for every annotation so issues can be diagnosed.
+    The log file is opened immediately and flushed after every entry so that a
+    partial log is preserved even if the process crashes during save.
     """
-    log: List[str] = []
-    log.append(f"SOURCE : {pdf_path}")
-    log.append(f"OUTPUT : {output_path}")
-    log.append(f"ANNOTATIONS : {len(annotations)}")
-    log.append("")
+    # Open the log file first so partial output is preserved on any crash.
+    _log_fh = None
+    if log_path:
+        try:
+            _log_fh = open(log_path, "w", encoding="utf-8")
+        except OSError:
+            _log_fh = None
+
+    def _log(msg: str) -> None:
+        if _log_fh:
+            _log_fh.write(msg + "\n")
+            _log_fh.flush()
 
     try:
-        doc = fitz.open(pdf_path)
+        _log(f"SOURCE : {pdf_path}")
+        _log(f"OUTPUT : {output_path}")
+        _log(f"ANNOTATIONS : {len(annotations)}")
+        _log("")
+
         try:
-            for page_idx in range(doc.page_count):
-                page = doc[page_idx]
+            doc = fitz.open(pdf_path)
+            try:
+                for page_idx in range(doc.page_count):
+                    page = doc[page_idx]
 
-                # Visual dimensions (rotation-aware)
-                pw, ph = page.rect.width, page.rect.height
-                rot = page.rotation
-                mw = page.mediabox.width
-                mh = page.mediabox.height
+                    # Visual dimensions (rotation-aware)
+                    pw, ph = page.rect.width, page.rect.height
+                    rot = page.rotation
+                    mw = page.mediabox.width
+                    mh = page.mediabox.height
 
-                log.append(f"=== PAGE {page_idx} ===")
-                log.append(f"  rotation       : {rot} deg")
-                log.append(f"  page.rect      : w={pw:.2f}  h={ph:.2f}  (visual/rotation-aware)")
-                log.append(f"  mediabox       : w={mw:.2f}  h={mh:.2f}  (native PDF units)")
+                    _log(f"=== PAGE {page_idx} ===")
+                    _log(f"  rotation       : {rot} deg")
+                    _log(f"  page.rect      : w={pw:.2f}  h={ph:.2f}  (visual/rotation-aware)")
+                    _log(f"  mediabox       : w={mw:.2f}  h={mh:.2f}  (native PDF units)")
 
-                def to_draw(vx: float, vy: float):
-                    """Convert visual (page.rect) coords to PyMuPDF draw coords."""
-                    if rot == 90:
-                        return vy, mh - vx
-                    if rot == 180:
-                        return mw - vx, mh - vy
-                    if rot == 270:
-                        return mw - vy, vx
-                    return vx, vy   # rot == 0
+                    def to_draw(vx: float, vy: float):
+                        """Convert visual (page.rect) coords to PyMuPDF draw coords."""
+                        if rot == 90:
+                            return vy, mh - vx
+                        if rot == 180:
+                            return mw - vx, mh - vy
+                        if rot == 270:
+                            return mw - vy, vx
+                        return vx, vy   # rot == 0
 
-                # ── "MARKED" watermark at top-left of every page ──────────────
-                # Simple sanity-check stamp: if it shows correctly in the viewer
-                # the basic text-insertion pipeline is working.
-                marked_fontsize = 8
-                marked_rect = _text_rect(4, 4, 50, 16, rot, mw, mh)
-                marked_rotate = (360 - rot) % 360
-                overflow = page.insert_textbox(
-                    marked_rect, "MARKED",
-                    fontsize=marked_fontsize, fontname="helv",
-                    color=(0.8, 0.0, 0.0), align=0, rotate=marked_rotate,
-                )
-                log.append(
-                    f"  MARKED stamp   : insert_textbox rect={marked_rect}"
-                    f" rotate={marked_rotate} overflow={overflow:.2f}"
-                )
+                    # ── "MARKED" watermark at top-left of every page ──────────────
+                    # insert_textbox rotate= must equal the page rotation so that the
+                    # text baseline goes left-to-right in the viewer (rot=0 → 0,
+                    # rot=90 → 90, etc.).  Using (360-rot) produced upside-down text
+                    # on landscape pages because it reversed the character direction.
+                    marked_fontsize = 8
+                    marked_rect = _text_rect(4, 4, 50, 16, rot, mw, mh)
+                    marked_rotate = rot
+                    overflow = page.insert_textbox(
+                        marked_rect, "MARKED",
+                        fontsize=marked_fontsize, fontname="helv",
+                        color=(0.8, 0.0, 0.0), align=0, rotate=marked_rotate,
+                    )
+                    _log(
+                        f"  MARKED stamp   : insert_textbox rect={marked_rect}"
+                        f" rotate={marked_rotate} overflow={overflow:.2f}"
+                    )
 
-                page_anns = [a for a in annotations if a.page == page_idx]
-                log.append(f"  annotations    : {len(page_anns)}")
+                    page_anns = [a for a in annotations if a.page == page_idx]
+                    _log(f"  annotations    : {len(page_anns)}")
 
-                for ann_i, ann in enumerate(page_anns):
-                    cx_v, cy_v = ann.x * pw, ann.y * ph
-                    log.append(f"  -- ann[{ann_i}] type={ann.type!r}")
-                    log.append(f"       frac   x={ann.x:.4f}  y={ann.y:.4f}")
-                    log.append(f"       visual x={cx_v:.2f}  y={cy_v:.2f}  (pw={pw:.2f} ph={ph:.2f})")
+                    for ann_i, ann in enumerate(page_anns):
+                        cx_v, cy_v = ann.x * pw, ann.y * ph
+                        _log(f"  -- ann[{ann_i}] type={ann.type!r}")
+                        _log(f"       frac   x={ann.x:.4f}  y={ann.y:.4f}")
+                        _log(f"       visual x={cx_v:.2f}  y={cy_v:.2f}  (pw={pw:.2f} ph={ph:.2f})")
 
-                    if ann.type == "checkmark":
-                        _draw_checkmark(page, cx_v, cy_v, to_draw)
-                    elif ann.type == "cross":
-                        _draw_cross(page, cx_v, cy_v, to_draw)
-                    elif ann.type == "tilde":
-                        _draw_tilde(page, cx_v, cy_v, rot, to_draw)
-                    elif ann.type == "text" and ann.text:
-                        p = _TEXT_PAD_PT
-                        if ann.width is not None:
-                            box_w = max(ann.width * pw, 10.0)
-                        else:
-                            try:
-                                font = fitz.Font("helv")
-                                lines = ann.text.split("\n") if ann.text else [""]
-                                box_w = max(
-                                    (font.text_length(ln, fontsize=_TEXT_FONTSIZE) for ln in lines),
-                                    default=0.0,
-                                ) + p * 2
-                            except Exception:
-                                box_w = max(len(ann.text) * 5.5, 20.0)
-                            box_w = max(box_w, 20.0)
-                        if ann.height is not None:
-                            box_h = max(ann.height * ph, 10.0)
-                        else:
-                            _, box_h = _measure_text_box(ann.text, box_w, p, _TEXT_FONTSIZE)
-                        box_rect  = _text_rect(cx_v,     cy_v,     box_w,         box_h,         rot, mw, mh)
-                        text_rect = _text_rect(cx_v + p, cy_v + p, max(1.0, box_w - p * 2),
-                                                                    max(1.0, box_h - p * 2), rot, mw, mh)
-                        text_rotate = (360 - rot) % 360
-                        log.append(f"       text   : {ann.text!r}")
-                        log.append(f"       ann.width={ann.width}  ann.height={ann.height}")
-                        log.append(f"       box_w={box_w:.2f}  box_h={box_h:.2f}  (PDF pts)")
-                        log.append(f"       box_rect  : {box_rect}")
-                        log.append(f"       text_rect : {text_rect}")
-                        log.append(f"       text_rotate (insert_textbox rotate=) : {text_rotate}")
-                        _draw_text(page, ann, cx_v, cy_v, pw, ph, rot, mw, mh)
-                    elif ann.type == "line" and ann.x2 is not None and ann.y2 is not None:
-                        p1 = to_draw(cx_v, cy_v)
-                        p2 = to_draw(ann.x2 * pw, ann.y2 * ph)
-                        log.append(f"       draw_line : {p1} → {p2}")
-                        page.draw_line(p1, p2, color=_RED, width=2)
-                    elif ann.type == "arrow" and ann.x2 is not None and ann.y2 is not None:
-                        p1 = to_draw(cx_v, cy_v)
-                        p2 = to_draw(ann.x2 * pw, ann.y2 * ph)
-                        log.append(f"       draw_arrow : {p1} → {p2}")
-                        _draw_arrow(page, p1[0], p1[1], p2[0], p2[1])
-                    elif ann.type == "circle" and ann.x2 is not None and ann.y2 is not None:
-                        cx_d, cy_d = to_draw(cx_v, cy_v)
-                        ex_d, ey_d = to_draw(ann.x2 * pw, ann.y2 * ph)
-                        radius = math.hypot(ex_d - cx_d, ey_d - cy_d)
-                        log.append(f"       draw_circle : center=({cx_d:.2f},{cy_d:.2f}) radius={radius:.2f}")
-                        page.draw_circle((cx_d, cy_d), radius, color=_RED, width=2)
+                        if ann.type == "checkmark":
+                            _draw_checkmark(page, cx_v, cy_v, to_draw)
+                        elif ann.type == "cross":
+                            _draw_cross(page, cx_v, cy_v, to_draw)
+                        elif ann.type == "tilde":
+                            _draw_tilde(page, cx_v, cy_v, rot, to_draw)
+                        elif ann.type == "text" and ann.text:
+                            p = _TEXT_PAD_PT
+                            if ann.width is not None:
+                                box_w = max(ann.width * pw, 10.0)
+                            else:
+                                try:
+                                    font = fitz.Font("helv")
+                                    lines = ann.text.split("\n") if ann.text else [""]
+                                    box_w = max(
+                                        (font.text_length(ln, fontsize=_TEXT_FONTSIZE) for ln in lines),
+                                        default=0.0,
+                                    ) + p * 2
+                                except Exception:
+                                    box_w = max(len(ann.text) * 5.5, 20.0)
+                                box_w = max(box_w, 20.0)
+                            if ann.height is not None:
+                                box_h = max(ann.height * ph, 10.0)
+                            else:
+                                _, box_h = _measure_text_box(ann.text, box_w, p, _TEXT_FONTSIZE)
+                            box_rect  = _text_rect(cx_v,     cy_v,     box_w,         box_h,         rot, mw, mh)
+                            text_rect = _text_rect(cx_v + p, cy_v + p, max(1.0, box_w - p * 2),
+                                                                        max(1.0, box_h - p * 2), rot, mw, mh)
+                            text_rotate = rot
+                            _log(f"       text   : {ann.text!r}")
+                            _log(f"       ann.width={ann.width}  ann.height={ann.height}")
+                            _log(f"       box_w={box_w:.2f}  box_h={box_h:.2f}  (PDF pts)")
+                            _log(f"       box_rect  : {box_rect}")
+                            _log(f"       text_rect : {text_rect}")
+                            _log(f"       text_rotate (insert_textbox rotate=) : {text_rotate}")
+                            _draw_text(page, ann, cx_v, cy_v, pw, ph, rot, mw, mh)
+                        elif ann.type == "line" and ann.x2 is not None and ann.y2 is not None:
+                            p1 = to_draw(cx_v, cy_v)
+                            p2 = to_draw(ann.x2 * pw, ann.y2 * ph)
+                            _log(f"       draw_line : {p1} → {p2}")
+                            page.draw_line(p1, p2, color=_RED, width=2)
+                        elif ann.type == "arrow" and ann.x2 is not None and ann.y2 is not None:
+                            p1 = to_draw(cx_v, cy_v)
+                            p2 = to_draw(ann.x2 * pw, ann.y2 * ph)
+                            _log(f"       draw_arrow : {p1} → {p2}")
+                            _draw_arrow(page, p1[0], p1[1], p2[0], p2[1])
+                        elif ann.type == "circle" and ann.x2 is not None and ann.y2 is not None:
+                            cx_d, cy_d = to_draw(cx_v, cy_v)
+                            ex_d, ey_d = to_draw(ann.x2 * pw, ann.y2 * ph)
+                            radius = math.hypot(ex_d - cx_d, ey_d - cy_d)
+                            _log(f"       draw_circle : center=({cx_d:.2f},{cy_d:.2f}) radius={radius:.2f}")
+                            page.draw_circle((cx_d, cy_d), radius, color=_RED, width=2)
 
-                log.append("")
+                    _log("")
 
-            # Try progressively less aggressive save options to avoid
-            # "MuPDF error: format error: object is not a stream" on some PDFs.
-            save_ok = False
-            for garbage_level in (4, 3, 0):
-                try:
-                    doc.save(output_path, garbage=garbage_level, deflate=True)
-                    save_ok = True
-                    log.append(f"SAVE OK (garbage={garbage_level})")
-                    break
-                except Exception as exc:
-                    log.append(f"SAVE FAILED (garbage={garbage_level}): {exc}")
-            if not save_ok:
-                log.append("ERROR: PDF could not be saved – all garbage levels failed.")
-        finally:
-            doc.close()
-    except Exception as exc:
-        log.append(f"FATAL ERROR opening PDF: {exc}")
-
-    if log_path:
-        with open(log_path, "w", encoding="utf-8") as fh:
-            fh.write("\n".join(log) + "\n")
+                # Try garbage=0 first (plain save, no object restructuring) to
+                # avoid "MuPDF error: format error: object is not a stream" which
+                # is triggered by the cross-reference rebuild done at higher levels.
+                # Fall back to garbage=4 for a full cleanup pass if level 0 fails.
+                save_ok = False
+                for garbage_level in (0, 4):
+                    try:
+                        doc.save(output_path, garbage=garbage_level, deflate=True)
+                        save_ok = True
+                        _log(f"SAVE OK (garbage={garbage_level})")
+                        break
+                    except Exception as exc:
+                        _log(f"SAVE FAILED (garbage={garbage_level}): {exc}")
+                if not save_ok:
+                    _log("ERROR: PDF could not be saved – all garbage levels failed.")
+            finally:
+                doc.close()
+        except Exception as exc:
+            _log(f"FATAL ERROR opening PDF: {exc}")
+    finally:
+        if _log_fh:
+            _log_fh.close()
 
 
 # ── Shape helpers ─────────────────────────────────────────────────────────────
@@ -343,8 +361,10 @@ def _draw_text(page, ann: Annotation, cx_v: float, cy_v: float,
     # Insert text directly on the page so it is always drawn fully opaque black.
     # Using page.insert_textbox (rather than Shape) avoids subtle state issues
     # that can cause text to silently disappear in some PyMuPDF versions.
-    # Counteract the page rotation so text appears upright in the viewer.
-    text_rotate = (360 - rot) % 360
+    # rotate= must equal the page rotation so characters advance left-to-right
+    # in the viewer.  Using (360-rot) reversed the direction and produced
+    # upside-down text on landscape (rot=90/270) pages.
+    text_rotate = rot
     page.insert_textbox(text_rect, text, fontsize=_TEXT_FONTSIZE,
                         fontname="helv", color=(0, 0, 0),
                         align=0, rotate=text_rotate)
