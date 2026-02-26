@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 
 import fitz  # pymupdf
 from PySide6.QtCore import QObject, QEvent, QPoint, Qt, Signal
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QCursor, QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QLineEdit,
     QPlainTextEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget,
@@ -72,13 +72,13 @@ class InlineTextEdit(QPlainTextEdit):
     committed = Signal(str)
     cancelled = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, font_pt: int = 9, parent=None):
         super().__init__(parent)
         self._done = False
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         self.setStyleSheet(
-            "background: #ffff99; border: 1px solid #888;"
-            " font-size: 9pt; font-weight: bold; padding: 1px;"
+            f"background: #ffff99; border: 1px solid #888;"
+            f" font-size: {font_pt}pt; font-weight: bold; padding: 1px;"
         )
 
     def keyPressEvent(self, event):
@@ -251,11 +251,9 @@ class PDFViewerPanel(QWidget):
         self._drag: Optional[_DragState] = None
         self._drag_moved: bool = False
         # Pan-by-drag state (Cmd/Ctrl + left-drag)
-        self._pan_origin: Optional[Tuple[float, float]] = None
+        self._pan_origin: Optional[Tuple[int, int]] = None
         self._pan_hval: int = 0
         self._pan_vval: int = 0
-        self._pan_pw: int = 1
-        self._pan_ph: int = 1
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -267,14 +265,14 @@ class PDFViewerPanel(QWidget):
 
         self._tool_buttons: Dict[str, QPushButton] = {}
         for tool_id, label, tip in [
-            (TOOL_CHECKMARK, "✓\nV", "Checkmark (V)"),
-            (TOOL_CROSS,     "✗\nX", "Cross (X)"),
-            (TOOL_TEXT,      "T",    "Text (T)"),
-            (TOOL_LINE,      "╱\nL", "Line (L)"),
-            (TOOL_ARROW,     "→\nA", "Arrow (A)"),
-            (TOOL_CIRCLE,    "○\nO", "Circle (O)"),
-            (TOOL_TILDE,     "~\nN", "Approx/tilde (N)"),
-            (TOOL_ERASER,    "⌫\nE", "Eraser (E)"),
+            (TOOL_CHECKMARK, "✓", "Checkmark (V)"),
+            (TOOL_CROSS,     "✗", "Cross (X)"),
+            (TOOL_TEXT,      "T", "Text (T)"),
+            (TOOL_LINE,      "╱", "Line (L)"),
+            (TOOL_ARROW,     "→", "Arrow (A)"),
+            (TOOL_CIRCLE,    "○", "Circle (O)"),
+            (TOOL_TILDE,     "~", "Approx/tilde (N)"),
+            (TOOL_ERASER,    "⌫", "Eraser (E)"),
         ]:
             btn = QPushButton(label)
             btn.setToolTip(tip)
@@ -463,14 +461,12 @@ class PDFViewerPanel(QWidget):
         self._drag_moved = False
         # Cmd/Ctrl + left-click → start panning
         if QApplication.queryKeyboardModifiers() & _PAN_MOD:
-            pm = self._page_label.pixmap()
-            if pm and not pm.isNull():
-                self._pan_origin = (fx, fy)
-                self._pan_hval = self._scroll.horizontalScrollBar().value()
-                self._pan_vval = self._scroll.verticalScrollBar().value()
-                self._pan_pw = pm.width()
-                self._pan_ph = pm.height()
-                self._page_label.setCursor(Qt.CursorShape.ClosedHandCursor)
+            vp = self._scroll.viewport()
+            cur = vp.mapFromGlobal(QCursor.pos())
+            self._pan_origin = (cur.x(), cur.y())
+            self._pan_hval = self._scroll.horizontalScrollBar().value()
+            self._pan_vval = self._scroll.verticalScrollBar().value()
+            self._page_label.setCursor(Qt.CursorShape.ClosedHandCursor)
             return
         if self._active_tool in (TOOL_NONE, None):
             drag = self._find_drag_target(fx, fy)
@@ -480,10 +476,12 @@ class PDFViewerPanel(QWidget):
         self._handle_click(fx, fy)
 
     def _on_page_moved(self, fx: float, fy: float):
-        # Active pan
+        # Active pan — use raw viewport pixel coordinates to avoid clamping jitter
         if self._pan_origin is not None:
-            dx = (fx - self._pan_origin[0]) * self._pan_pw
-            dy = (fy - self._pan_origin[1]) * self._pan_ph
+            vp = self._scroll.viewport()
+            cur = vp.mapFromGlobal(QCursor.pos())
+            dx = cur.x() - self._pan_origin[0]
+            dy = cur.y() - self._pan_origin[1]
             self._scroll.horizontalScrollBar().setValue(int(self._pan_hval - dx))
             self._scroll.verticalScrollBar().setValue(int(self._pan_vval - dy))
             return
@@ -694,14 +692,29 @@ class PDFViewerPanel(QWidget):
         pm = self._page_label.pixmap()
         if not pm or pm.isNull():
             return
+
+        # Scale font to match the rendered annotation size
+        s = pm.height() / annotation_overlay.BASE_PAGE_HEIGHT
+        font_pt = max(4, round(annotation_overlay._TEXT_FONT_PT * s))
+
         cx = int(fx * pm.width())
         cy = int(fy * pm.height())
         vp = self._scroll.viewport()
         pos = self._page_label.mapTo(vp, QPoint(cx, cy))
 
-        editor = InlineTextEdit(vp)
+        editor = InlineTextEdit(font_pt, vp)
         editor.setMinimumWidth(_INLINE_EDITOR_MIN_W)
-        editor.resize(_INLINE_EDITOR_WIDTH, _INLINE_EDITOR_HEIGHT)
+        # For existing annotations, match the rendered box dimensions exactly
+        if edit_idx >= 0:
+            ann = self._annotations[edit_idx]
+            rect = annotation_overlay.get_text_box_rect(ann, pm.width(), pm.height())
+            if rect:
+                editor.resize(max(rect.width(), _INLINE_EDITOR_MIN_W),
+                              max(rect.height(), 40))
+            else:
+                editor.resize(_INLINE_EDITOR_WIDTH, _INLINE_EDITOR_HEIGHT)
+        else:
+            editor.resize(_INLINE_EDITOR_WIDTH, _INLINE_EDITOR_HEIGHT)
         editor.move(pos)
         if edit_idx >= 0:
             editor.setPlainText(self._annotations[edit_idx].text or "")

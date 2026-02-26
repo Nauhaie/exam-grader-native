@@ -182,7 +182,7 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
 
     elif ann.type == "tilde":
         font = QFont()
-        font.setPointSize(max(4, round(14 * s)))
+        font.setPointSize(max(4, round(28 * s)))
         font.setBold(True)
         painter.setFont(font)
         fm = QFontMetrics(font)
@@ -198,7 +198,7 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
         p = max(1, round(_TEXT_PAD * s))
         bw, bh = _text_box_size(ann.text, ann.width, w, h)
         bg = QRect(cx, cy, bw, bh)
-        painter.fillRect(bg, QColor(255, 255, 0, 200))
+        painter.fillRect(bg, QColor(255, 255, 0, 128))
         painter.setPen(QPen(QColor("black"), 1))
         painter.drawRect(bg)
         painter.drawText(QRect(cx + p, cy + p, bw - p * 2, bh - p * 2),

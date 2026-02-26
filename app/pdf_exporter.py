@@ -153,8 +153,8 @@ def _draw_tilde(page, cx_v: float, cy_v: float, rot: int,
     cx_d, cy_d = to_draw(cx_v, cy_v)
     # rotate= undoes the page rotation so the glyph appears upright
     page.insert_text(
-        fitz.Point(cx_d - 4, cy_d + 5),
-        "~", fontsize=14, color=_ORANGE, rotate=rot,
+        fitz.Point(cx_d - 8, cy_d + 10),
+        "~", fontsize=28, color=_ORANGE, rotate=rot,
     )
 
 
@@ -169,7 +169,7 @@ def _draw_text(page, ann: Annotation, cx_v: float, cy_v: float,
     else:
         box_w = max(len(text) * 5.5, 20)
 
-    # Estimate height (respecting explicit newlines)
+    # Estimate height — use 13pt per line so fontsize=9 fits with default leading
     chars_per_line = max(1, int(box_w / 5.5))
     explicit_lines = text.split("\n")
     wrapped = sum(
@@ -177,14 +177,19 @@ def _draw_text(page, ann: Annotation, cx_v: float, cy_v: float,
         for ln in explicit_lines
     )
     p = _TEXT_PAD_PT
-    box_h = max(14.0, wrapped * 11 + p * 2)
+    box_h = max(20.0, wrapped * 13 + p * 2)
 
     box_rect  = _text_rect(cx_v,     cy_v,     box_w,         box_h,         rot, mw, mh)
     text_rect = _text_rect(cx_v + p, cy_v + p, max(1.0, box_w - p * 2),
                                                 max(1.0, box_h - p * 2), rot, mw, mh)
-    page.draw_rect(box_rect, color=(0, 0, 0), fill=(1, 1, 0.2), width=0.5)
-    page.insert_textbox(text_rect, text, fontsize=9, color=(0, 0, 0), align=0,
-                        rotate=rot if rot in (90, 180, 270) else 0)
+    # Use a single shape so the semi-transparent rect is drawn first and the
+    # text is guaranteed to appear on top within the same content stream.
+    shape = page.new_shape()
+    shape.draw_rect(box_rect)
+    shape.finish(color=(0, 0, 0), fill=(1, 1, 0), fill_opacity=0.5, width=0.5)
+    shape.insert_textbox(text_rect, text, fontsize=9, color=(0, 0, 0), align=0,
+                         rotate=rot if rot in (90, 180, 270) else 0)
+    shape.commit()
 
 
 def _text_rect(cx_v: float, cy_v: float, bw: float, bh: float,
