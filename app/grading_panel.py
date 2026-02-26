@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
     QLineEdit,
+    QTableView,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -16,6 +17,104 @@ from PySide6.QtWidgets import (
 from models import GradingScheme, Student, Subquestion
 
 GRADE_SCALE = 20  # French 0–20 grading system
+
+
+class _FrozenColumnTableWidget(QTableWidget):
+    """
+    A QTableWidget whose first two columns are always visible (frozen/sticky).
+
+    The frozen columns are rendered in an overlay QTableView that sits in the
+    left viewport margin, so the scrollable area starts at column 2.
+    """
+
+    _N_FROZEN = 2
+    frozen_row_clicked = Signal(int)  # logical row index
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.verticalHeader().setVisible(False)
+        self.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+
+        # Frozen overlay: shows only the first _N_FROZEN columns
+        self._fv = QTableView(self)
+        self._fv.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._fv.verticalHeader().setVisible(False)
+        self._fv.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._fv.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._fv.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._fv.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self._fv.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents
+        )
+        self._fv.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._fv.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._fv.clicked.connect(
+            lambda idx: self.frozen_row_clicked.emit(idx.row())
+        )
+
+        # Keep vertical scroll positions in sync
+        self.verticalScrollBar().valueChanged.connect(
+            self._fv.verticalScrollBar().setValue
+        )
+        self._fv.verticalScrollBar().valueChanged.connect(
+            self.verticalScrollBar().setValue
+        )
+
+        # Mirror row-height changes to the frozen view
+        self.verticalHeader().sectionResized.connect(
+            lambda row, _old, new_h: self._fv.setRowHeight(row, new_h)
+        )
+
+    def refresh_frozen(self):
+        """
+        Synchronise the frozen overlay with the main table.
+        Call after every full table rebuild (setRowCount / setItem / …).
+        """
+        model = self.model()
+        if self._fv.model() is None:
+            self._fv.setModel(model)
+
+        # In the main table hide the frozen cols; in the overlay show only them
+        for col in range(model.columnCount()):
+            frozen = col < self._N_FROZEN
+            self.setColumnHidden(col, frozen)
+            self._fv.setColumnHidden(col, not frozen)
+
+        # Let the overlay measure its own column widths from the model data
+        self._fv.resizeColumnsToContents()
+
+        # Sync row heights from the main table to the overlay
+        for row in range(self.rowCount()):
+            self._fv.setRowHeight(row, self.rowHeight(row))
+
+        self._update_frozen_geometry()
+        self._fv.show()
+
+    # ── geometry helpers ──────────────────────────────────────────────────────
+
+    def _frozen_cols_width(self) -> int:
+        return sum(self._fv.columnWidth(c) for c in range(self._N_FROZEN))
+
+    def _update_frozen_geometry(self):
+        fw = self.frameWidth()
+        frozen_w = self._frozen_cols_width()
+        header_h = self.horizontalHeader().height()
+
+        # Push the main scroll viewport to the right of the frozen area
+        self.setViewportMargins(frozen_w, 0, 0, 0)
+
+        # Position the frozen overlay in the left margin (outside the viewport)
+        self._fv.setGeometry(
+            fw,
+            fw,
+            frozen_w,
+            self.viewport().height() + header_h,
+        )
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_frozen_geometry()
 
 
 class GradingPanel(QWidget):
@@ -39,16 +138,16 @@ class GradingPanel(QWidget):
         self._search.textChanged.connect(self._rebuild_table)
         layout.addWidget(self._search)
 
-        self._table = QTableWidget()
+        self._table = _FrozenColumnTableWidget()
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked |
             QAbstractItemView.EditTrigger.AnyKeyPressed
         )
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        self._table.verticalHeader().setVisible(False)
         self._table.itemChanged.connect(self._on_item_changed)
         self._table.cellClicked.connect(self._on_cell_clicked)
+        self._table.frozen_row_clicked.connect(self._on_frozen_row_clicked)
         layout.addWidget(self._table)
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -97,6 +196,7 @@ class GradingPanel(QWidget):
             self._table.blockSignals(False)
             self._rebuilding = False
         self._apply_highlight()
+        self._table.refresh_frozen()
 
     def _build_table_contents(self):
         filtered = self._filtered_students()
@@ -287,3 +387,6 @@ class GradingPanel(QWidget):
         student = filtered[row]
         if self._current_student is None or student.student_number != self._current_student.student_number:
             self.student_selected.emit(student)
+
+    def _on_frozen_row_clicked(self, row: int):
+        self._on_cell_clicked(row, 0)

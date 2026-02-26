@@ -103,6 +103,8 @@ def load_annotations(student_number: str) -> List[Annotation]:
             x=item["x"],
             y=item["y"],
             text=item.get("text"),
+            x2=item.get("x2"),
+            y2=item.get("y2"),
         ))
     return annotations
 
@@ -115,6 +117,10 @@ def save_annotations(student_number: str, annotations: List[Annotation]):
         item = {"page": ann.page, "type": ann.type, "x": ann.x, "y": ann.y}
         if ann.text is not None:
             item["text"] = ann.text
+        if ann.x2 is not None:
+            item["x2"] = ann.x2
+        if ann.y2 is not None:
+            item["y2"] = ann.y2
         data.append(item)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)

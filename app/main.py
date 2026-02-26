@@ -11,8 +11,6 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QSplitter,
-    QVBoxLayout,
-    QWidget,
 )
 
 import data_store
@@ -20,7 +18,6 @@ from grading_panel import GradingPanel
 from models import Student
 from pdf_viewer import PDFViewerPanel
 from setup_dialog import SetupDialog
-from student_list import StudentListPanel
 
 
 class MainWindow(QMainWindow):
@@ -53,20 +50,10 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(splitter)
 
-        # Left: student list (top) + PDF viewer (bottom)
-        left_widget = QWidget()
-        left_layout = QVBoxLayout(left_widget)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-
-        self._student_list = StudentListPanel()
-        self._student_list.student_selected.connect(self._on_student_selected)
-        left_layout.addWidget(self._student_list, stretch=1)
-
+        # Left: PDF viewer only
         self._pdf_viewer = PDFViewerPanel()
         self._pdf_viewer.annotations_changed.connect(self._on_annotations_changed)
-        left_layout.addWidget(self._pdf_viewer, stretch=3)
-
-        splitter.addWidget(left_widget)
+        splitter.addWidget(self._pdf_viewer)
 
         # Right: grading spreadsheet
         self._grading_panel = GradingPanel()
@@ -110,7 +97,6 @@ class MainWindow(QMainWindow):
             self._apply_session()
 
     def _apply_session(self):
-        self._student_list.set_students(self._students)
         self._grading_panel.set_session(self._students, self._grading_scheme, self._grades)
         if self._students:
             self._select_student(self._students[0])
@@ -120,7 +106,6 @@ class MainWindow(QMainWindow):
                 and student.student_number == self._current_student.student_number):
             return
         self._current_student = student
-        self._student_list.select_student(student)
         self._grading_panel.set_current_student(student)
         pdf_path = os.path.join(self._exams_dir, f"{student.student_number}.pdf")
         annotations = data_store.load_annotations(student.student_number)
@@ -143,7 +128,6 @@ class MainWindow(QMainWindow):
             self._grades[student_number] = {}
         self._grades[student_number][subquestion_name] = points
         data_store.save_grades(self._grades)
-        self._student_list.mark_graded(student_number, bool(self._grades.get(student_number)))
 
     def _export_csv(self):
         if not self._grading_scheme or not self._students:
