@@ -25,15 +25,62 @@ python main.py
 
 ---
 
-## First-time setup
+## Project directory structure
 
-On first launch (or via **File → Reconfigure…**) you will be asked for:
+The app works with a **project directory** that you provide once via
+**File → Open Project…** (also shown on first launch).  The directory must
+contain:
 
-| Field | Description |
-|---|---|
-| **Exams directory** | Folder containing one PDF per student, named `<student_number>.pdf` |
-| **Students CSV** | CSV with at minimum the columns `student_number`, `last_name`, `first_name`. Any additional columns (e.g. `participantID`, `group`, remarks…) are stored and can be shown/hidden in the grading view. |
-| **Grading scheme JSON** | Describes exercises and sub-questions (see `sample_data/grading_scheme.json`). |
+```
+my_project/
+  exams/          ← one PDF per student, named <student_number>.pdf
+  config.json     ← grading scheme + export filename template
+  students.csv    ← student roster
+```
+
+The app will automatically create the following sub-directories inside the
+project on first use:
+
+```
+my_project/
+  data/           ← internal: grades.json, annotations/
+  export/         ← exported grades (grades.csv, grades.xlsx)
+  export/annotated/ ← annotated PDFs
+```
+
+A ready-to-use example can be found in the `sample_project/` folder.
+
+### config.json format
+
+```json
+{
+  "export_filename_template": "{student_number}_annotated",
+  "exercises": [
+    {
+      "name": "Exercise 1",
+      "subquestions": [
+        { "name": "1a", "max_points": 3 },
+        { "name": "1b", "max_points": 4 }
+      ]
+    }
+  ]
+}
+```
+
+The `export_filename_template` may reference any field from the students CSV
+using `{field_name}` placeholders.  Available fields: `{student_number}`,
+`{last_name}`, `{first_name}`, plus any extra CSV columns.
+
+### students.csv format
+
+```
+student_number,last_name,first_name
+12345,Dupont,Jean
+67890,Martin,Marie
+```
+
+Any additional columns (e.g. `participantID`, `group`) are stored and can be
+shown in the grading panel.
 
 ---
 
@@ -56,14 +103,16 @@ On first launch (or via **File → Reconfigure…**) you will be asked for:
 | T | **T** | Text note (click to place, **Enter** = newline, **Ctrl+Enter** = confirm, **Esc** = cancel; double-click existing note to edit) |
 | ╱ | **L** | Line (red) |
 | → | **A** | Arrow (red) |
-| ○ | **O** | Circle (red, grab circumference to move/resize) |
+| ○ | **O** | Circle (red, resize handle shown at the bottom) |
 | ~ | **N** | Approx/tilde (orange, "approximately correct") |
 | ⌫ | **E** | Eraser (click annotation to delete) |
 
 For **line / arrow / circle**: click once to set the start point, click again to finish.  
 Press **Esc** to cancel a shape in progress.
 
-To **move or resize** an existing annotation: select no tool (press the active tool button again to deselect), then drag the annotation.
+To **move or resize** an existing annotation: select no tool (press the active tool button
+again to deselect), then hover over the annotation (a grab cursor appears) and drag it.
+For circles, drag the blue handle at the bottom to resize, or drag the circumference to move.
 
 ---
 
@@ -116,26 +165,20 @@ read-only columns.  Extra fields are also searchable from the filter box.
 
 ## Exporting
 
+All exports go to fixed paths inside the project directory — no file dialogs needed.
+
 ### Annotated PDFs
 
-**Export → Export Annotated PDFs…**
+**Export → Export Annotated PDFs**
 
-You will be prompted for an output directory and a **filename template**.
-The template may use any CSV field name in curly braces, e.g.:
-
-```
-Interro1_{participantID}_annotated
-Exam_{last_name}_{first_name}
-{student_number}_graded
-```
-
-Available placeholders: `{student_number}`, `{last_name}`, `{first_name}`, and
-any extra column from your CSV.
+Output files are written to `<project>/export/annotated/`.
+The filename for each student is determined by the `export_filename_template`
+field in `config.json`.
 
 ### Grades
 
-- **Export → Export Grades as CSV…**
-- **Export → Export Grades as XLSX…**
+- **Export → Export Grades as CSV** → `<project>/export/grades.csv`
+- **Export → Export Grades as XLSX** → `<project>/export/grades.xlsx`
 
 ---
 
@@ -158,9 +201,6 @@ bash package-app.sh
 | Windows | `dist/ExamGrader/ExamGrader.exe` |
 | Linux | `dist/ExamGrader/ExamGrader` |
 
-> **Note:** The `data/` folder (session config, grades, annotations) is always
-> stored next to the application's source, not inside the bundle.
-
 ---
 
 ## Project structure
@@ -174,9 +214,9 @@ app/
   grading_panel.py     – grade-entry spreadsheet
   data_store.py        – load/save sessions, students, grades, annotations
   models.py            – data classes
-  setup_dialog.py      – first-run configuration dialog
-sample_data/           – example CSV, JSON and exam PDFs
-data/                  – runtime data (auto-created, not in version control)
+  setup_dialog.py      – project-open dialog
+sample_project/        – example project (copy and fill exams/ with your PDFs)
+sample_data/           – legacy example CSV, JSON and exam PDFs
 requirements.txt
 package-app.sh
 ```

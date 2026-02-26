@@ -7,12 +7,6 @@ import openpyxl
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
-    QDialog,
-    QDialogButtonBox,
-    QFileDialog,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -29,49 +23,6 @@ from pdf_viewer import PDFViewerPanel
 from setup_dialog import SetupDialog
 
 
-class _FilenameTemplateDialog(QDialog):
-    """Dialog to enter a PDF filename template with clickable field-insert buttons."""
-
-    def __init__(self, available_fields: list, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Filename Template")
-        self.setMinimumWidth(460)
-
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Output filename template (without <i>.pdf</i>):"))
-
-        self._edit = QLineEdit("{student_number}_annotated")
-        layout.addWidget(self._edit)
-
-        layout.addWidget(QLabel("Click a field to insert it at the cursor position:"))
-
-        btn_widget = QWidget()
-        btn_layout = QHBoxLayout(btn_widget)
-        btn_layout.setContentsMargins(0, 0, 0, 0)
-        btn_layout.setSpacing(4)
-        for field in available_fields:
-            btn = QPushButton("{" + field + "}")
-            btn.setToolTip(f"Insert {{{field}}} into the template")
-            btn.clicked.connect(lambda checked, f=field: self._insert(f))
-            btn_layout.addWidget(btn)
-        btn_layout.addStretch()
-        layout.addWidget(btn_widget)
-
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
-    def _insert(self, field: str):
-        self._edit.insert("{" + field + "}")
-        self._edit.setFocus()
-
-    def template(self) -> str:
-        return self._edit.text().strip() or "{student_number}_annotated"
-
-
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -83,22 +34,23 @@ class MainWindow(QMainWindow):
         self._exams_dir = ""
         self._grades = {}
         self._current_student = None
+        self._export_template = "{student_number}_annotated"
 
         self._setup_ui()
         self._load_session()
 
     def _setup_ui(self):
         file_menu = self.menuBar().addMenu("File")
-        reconfigure_action = file_menu.addAction("Reconfigure…")
+        reconfigure_action = file_menu.addAction("Open Project…")
         reconfigure_action.triggered.connect(self._show_setup)
         file_menu.addSeparator()
         quit_action = file_menu.addAction("Quit")
         quit_action.triggered.connect(self.close)
 
         export_menu = self.menuBar().addMenu("Export")
-        export_menu.addAction("Export Grades as CSV…").triggered.connect(self._export_csv)
-        export_menu.addAction("Export Grades as XLSX…").triggered.connect(self._export_xlsx)
-        export_menu.addAction("Export Annotated PDFs…").triggered.connect(self._export_annotated_pdfs)
+        export_menu.addAction("Export Grades as CSV").triggered.connect(self._export_csv)
+        export_menu.addAction("Export Grades as XLSX").triggered.connect(self._export_xlsx)
+        export_menu.addAction("Export Annotated PDFs").triggered.connect(self._export_annotated_pdfs)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(splitter)
@@ -122,37 +74,32 @@ class MainWindow(QMainWindow):
     def _load_session(self):
         config = data_store.load_session_config()
         if config:
-            exams_dir = config.get("exams_dir", "")
-            students_csv = config.get("students_csv", "")
-            grading_scheme_path = config.get("grading_scheme", "")
-            if (os.path.isdir(exams_dir)
-                    and os.path.isfile(students_csv)
-                    and os.path.isfile(grading_scheme_path)):
+            project_dir = config.get("project_dir", "")
+            if os.path.isdir(project_dir):
                 try:
-                    self._students = data_store.load_students(students_csv)
-                    self._grading_scheme = data_store.load_grading_scheme(grading_scheme_path)
-                    self._exams_dir = exams_dir
-                    self._grades = data_store.load_grades()
-                    self._apply_session()
+                    self._apply_project(project_dir)
                     return
                 except Exception as exc:
                     QMessageBox.warning(
                         self, "Load Error",
-                        f"Could not restore previous session:\n{exc}\n\nPlease reconfigure."
+                        f"Could not restore previous session:\n{exc}\n\nPlease open a project."
                     )
         self._show_setup()
 
     def _show_setup(self):
         dlg = SetupDialog(self)
         if dlg.exec():
-            config = data_store.load_session_config()
-            self._exams_dir = config["exams_dir"]
-            self._students = data_store.load_students(config["students_csv"])
-            self._grading_scheme = data_store.load_grading_scheme(config["grading_scheme"])
-            self._grades = data_store.load_grades()
-            self._apply_session()
+            self._apply_project(dlg.project_dir())
 
-    def _apply_session(self):
+    def _apply_project(self, project_dir: str):
+        data_store.set_project_dir(project_dir)
+        project_config = data_store.load_project_config(project_dir)
+        self._grading_scheme = data_store.load_grading_scheme_from_config(project_config)
+        self._export_template = data_store.get_export_filename_template(project_config)
+        self._exams_dir = os.path.join(project_dir, "exams")
+        self._students = data_store.load_students(os.path.join(project_dir, "students.csv"))
+        self._grades = data_store.load_grades()
+        data_store.ensure_data_dirs()
         self._grading_panel.set_session(self._students, self._grading_scheme, self._grades)
         if self._students:
             self._select_student(self._students[0])
@@ -187,13 +134,9 @@ class MainWindow(QMainWindow):
 
     def _export_csv(self):
         if not self._grading_scheme or not self._students:
-            QMessageBox.warning(self, "Export", "No session configured.")
+            QMessageBox.warning(self, "Export", "No project open.")
             return
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export Grades as CSV", "grades.csv", "CSV files (*.csv)"
-        )
-        if not path:
-            return
+        path = os.path.join(data_store.EXPORT_DIR, "grades.csv")
         subquestions = [sq for ex in self._grading_scheme.exercises for sq in ex.subquestions]
         fieldnames = ["student_number", "last_name", "first_name"] + [sq.name for sq in subquestions]
         with open(path, "w", newline="", encoding="utf-8") as f:
@@ -213,13 +156,9 @@ class MainWindow(QMainWindow):
 
     def _export_xlsx(self):
         if not self._grading_scheme or not self._students:
-            QMessageBox.warning(self, "Export", "No session configured.")
+            QMessageBox.warning(self, "Export", "No project open.")
             return
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export Grades as XLSX", "grades.xlsx", "Excel files (*.xlsx)"
-        )
-        if not path:
-            return
+        path = os.path.join(data_store.EXPORT_DIR, "grades.xlsx")
         subquestions = [sq for ex in self._grading_scheme.exercises for sq in ex.subquestions]
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -236,25 +175,8 @@ class MainWindow(QMainWindow):
 
     def _export_annotated_pdfs(self):
         if not self._students:
-            QMessageBox.warning(self, "Export", "No session configured.")
+            QMessageBox.warning(self, "Export", "No project open.")
             return
-        output_dir = QFileDialog.getExistingDirectory(
-            self, "Select Output Directory for Annotated PDFs"
-        )
-        if not output_dir:
-            return
-
-        # Ask for a filename template
-        extra_keys = []
-        for s in self._students:
-            for k in s.extra_fields:
-                if k not in extra_keys:
-                    extra_keys.append(k)
-        all_fields = ["student_number", "last_name", "first_name"] + extra_keys
-        dlg = _FilenameTemplateDialog(all_fields, self)
-        if not dlg.exec():
-            return
-        template = dlg.template()
 
         # Flush current student's annotations so the export is up-to-date
         if self._current_student:
@@ -269,6 +191,9 @@ class MainWindow(QMainWindow):
         )
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.show()
+
+        output_dir = data_store.ANNOTATED_EXPORT_DIR
+        template = self._export_template
 
         exported = skipped = 0
         for i, student in enumerate(self._students):
