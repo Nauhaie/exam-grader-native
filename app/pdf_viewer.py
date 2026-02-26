@@ -519,7 +519,8 @@ class PDFViewerPanel(QWidget):
                 rect = annotation_overlay.get_text_box_rect(ann, w, h)
                 if rect is None:
                     continue
-                hs = annotation_overlay._RESIZE_HANDLE
+                hs = max(4, round(annotation_overlay._RESIZE_HANDLE
+                                  * h / annotation_overlay.BASE_PAGE_HEIGHT))
                 # Bottom-right resize handle zone (generous hit area)
                 if (rect.right() - hs <= mx <= rect.right() + 4
                         and rect.bottom() - hs <= my <= rect.bottom() + 4):

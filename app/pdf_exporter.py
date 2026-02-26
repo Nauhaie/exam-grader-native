@@ -73,7 +73,7 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                 page.draw_line(
                     (cx, cy),
                     (ann.x2 * pw, ann.y2 * ph),
-                    color=(0.08, 0.4, 0.75), width=1.5,
+                    color=(0.08, 0.4, 0.75), width=2,
                 )
             elif ann.type == "arrow" and ann.x2 is not None and ann.y2 is not None:
                 _draw_arrow(page, cx, cy, ann.x2 * pw, ann.y2 * ph)
@@ -81,7 +81,7 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                 radius = math.hypot(ann.x2 * pw - cx, ann.y2 * ph - cy)
                 page.draw_circle(
                     (cx, cy), radius,
-                    color=(0.08, 0.4, 0.75), width=1.5,
+                    color=(0.08, 0.4, 0.75), width=2,
                 )
     doc.save(output_path, garbage=4, deflate=True)
     doc.close()
@@ -89,14 +89,14 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
 
 # ── Shape helpers ─────────────────────────────────────────────────────────────
 
-def _draw_checkmark(page, cx: float, cy: float, r: float = 8):
+def _draw_checkmark(page, cx: float, cy: float, r: float = 12):
     page.draw_line((cx - r, cy), (cx - r / 3, cy + r),
                    color=(0, 0.6, 0), width=2)
     page.draw_line((cx - r / 3, cy + r), (cx + r, cy - r),
                    color=(0, 0.6, 0), width=2)
 
 
-def _draw_cross(page, cx: float, cy: float, r: float = 8):
+def _draw_cross(page, cx: float, cy: float, r: float = 12):
     page.draw_line((cx - r, cy - r), (cx + r, cy + r),
                    color=(0.85, 0.1, 0.1), width=2)
     page.draw_line((cx + r, cy - r), (cx - r, cy + r),
@@ -117,15 +117,15 @@ def _draw_text(page, ann: Annotation, cx: float, cy: float, pw: float):
 
     rect = fitz.Rect(cx, cy, cx + box_w, cy + box_h)
     page.draw_rect(rect, color=(0, 0, 0), fill=(1, 1, 0.2), width=0.5)
-    page.insert_textbox(rect, text, fontsize=8, color=(0, 0, 0), align=0)
+    page.insert_textbox(rect, text, fontsize=9, color=(0, 0, 0), align=0)
 
 
 def _draw_arrow(page, x1: float, y1: float, x2: float, y2: float):
-    page.draw_line((x1, y1), (x2, y2), color=(0.08, 0.4, 0.75), width=1.5)
+    page.draw_line((x1, y1), (x2, y2), color=(0.08, 0.4, 0.75), width=2)
     if x1 == x2 and y1 == y2:
         return
     angle = math.atan2(y2 - y1, x2 - x1)
-    size, half = 8, math.pi / 6
+    size, half = 12, math.pi / 6
     pts = [
         fitz.Point(x2, y2),
         fitz.Point(x2 - size * math.cos(angle - half), y2 - size * math.sin(angle - half)),

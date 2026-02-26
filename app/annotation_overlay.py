@@ -16,17 +16,21 @@ from PySide6.QtGui import (
 
 from models import Annotation
 
-MARKER_RADIUS = 12
+MARKER_RADIUS = 12          # pt at zoom 1 (≈ 4 mm on A4 long side)
 _TEXT_FONT_PT = 9
 _TEXT_PAD = 3
-_RESIZE_HANDLE = 8          # side length (px) of the resize-handle square
+_RESIZE_HANDLE = 8          # side length (pt) of the resize-handle square
 _TEXT_WRAP_MAX_H = 10_000   # generous max-height for word-wrap bound calculation
+
+# Long side of A4 in PDF points (= pixels at 72 dpi, zoom 1.0).
+# Used as the reference length so annotation sizes are physically consistent
+# for both A4-portrait and A3-landscape pages (both have the same 842 pt height).
+BASE_PAGE_HEIGHT: float = 842.0
 
 
 # ── Public drawing helpers ────────────────────────────────────────────────────
 
-def draw_annotations(pixmap: QPixmap, annotations: List[Annotation], page: int,
-                     zoom: float = 1.0) -> QPixmap:
+def draw_annotations(pixmap: QPixmap, annotations: List[Annotation], page: int) -> QPixmap:
     """Return a *copy* of *pixmap* with all annotations for *page* drawn on it."""
     result = pixmap.copy()
     painter = QPainter(result)
@@ -35,7 +39,7 @@ def draw_annotations(pixmap: QPixmap, annotations: List[Annotation], page: int,
     for ann in annotations:
         if ann.page != page:
             continue
-        _draw_one(painter, ann, int(ann.x * w), int(ann.y * h), w, h, zoom)
+        _draw_one(painter, ann, int(ann.x * w), int(ann.y * h), w, h)
     painter.end()
     return result
 
@@ -50,24 +54,27 @@ def draw_preview(
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     w, h = pixmap.width(), pixmap.height()
+    s = h / BASE_PAGE_HEIGHT
     x1, y1 = int(start[0] * w), int(start[1] * h)
     x2, y2 = int(end[0] * w), int(end[1] * h)
 
-    pen = QPen(QColor("#1565C0"), 2, Qt.PenStyle.DashLine)
+    pen_w = max(1, round(2 * s))
+    pen = QPen(QColor("#1565C0"), pen_w, Qt.PenStyle.DashLine)
     painter.setPen(pen)
     if tool == "line":
         painter.drawLine(x1, y1, x2, y2)
     elif tool == "arrow":
-        _draw_arrow(painter, x1, y1, x2, y2)
+        _draw_arrow(painter, x1, y1, x2, y2, s)
     elif tool == "circle":
         radius = int(math.hypot(x2 - x1, y2 - y1))
         if radius > 0:
             painter.drawEllipse(x1 - radius, y1 - radius, radius * 2, radius * 2)
 
     # Start-point dot
+    dot_r = max(2, round(4 * s))
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(QColor("#1565C0"))
-    painter.drawEllipse(x1 - 4, y1 - 4, 8, 8)
+    painter.drawEllipse(x1 - dot_r, y1 - dot_r, dot_r * 2, dot_r * 2)
     painter.end()
 
 
@@ -77,7 +84,7 @@ def get_text_box_rect(ann: Annotation, img_width: int, img_height: int) -> Optio
         return None
     cx = int(ann.x * img_width)
     cy = int(ann.y * img_height)
-    bw, bh = _text_box_size(ann.text, ann.width, img_width)
+    bw, bh = _text_box_size(ann.text, ann.width, img_width, img_height)
     return QRect(cx, cy, bw, bh)
 
 
@@ -126,13 +133,19 @@ def find_annotation_at(
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
-def _text_box_size(text: str, width_frac: Optional[float], img_width: int) -> Tuple[int, int]:
-    """Return *(width_px, height_px)* for a text annotation box."""
+def _text_box_size(text: str, width_frac: Optional[float],
+                   img_width: int, img_height: int) -> Tuple[int, int]:
+    """Return *(width_px, height_px)* for a text annotation box.
+
+    All sizes scale with *img_height* so the box appears the same physical
+    size relative to the page regardless of zoom level.
+    """
+    s = img_height / BASE_PAGE_HEIGHT
     font = QFont()
-    font.setPointSize(_TEXT_FONT_PT)
+    font.setPointSize(max(4, round(_TEXT_FONT_PT * s)))
     font.setBold(True)
     fm = QFontMetrics(font)
-    p = _TEXT_PAD
+    p = max(1, round(_TEXT_PAD * s))
 
     if width_frac is not None:
         bw = max(int(width_frac * img_width), 20)
@@ -148,24 +161,28 @@ def _text_box_size(text: str, width_frac: Optional[float], img_width: int) -> Tu
 
 
 def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: int):
-    r = MARKER_RADIUS
+    s = h / BASE_PAGE_HEIGHT          # scale factor relative to A4 long side
+    r = max(4, round(MARKER_RADIUS * s))
+    stroke = max(1, round(2 * s))     # general pen width
+    thick = max(1, round(3 * s))      # thicker pen for checkmark / cross
+
     if ann.type == "checkmark":
-        painter.setPen(QPen(QColor("green"), 3))
+        painter.setPen(QPen(QColor("green"), thick))
         painter.drawLine(cx - r, cy, cx - r // 3, cy + r)
         painter.drawLine(cx - r // 3, cy + r, cx + r, cy - r)
 
     elif ann.type == "cross":
-        painter.setPen(QPen(QColor("red"), 3))
+        painter.setPen(QPen(QColor("red"), thick))
         painter.drawLine(cx - r, cy - r, cx + r, cy + r)
         painter.drawLine(cx + r, cy - r, cx - r, cy + r)
 
     elif ann.type == "text" and ann.text:
         font = QFont()
-        font.setPointSize(_TEXT_FONT_PT)
+        font.setPointSize(max(4, round(_TEXT_FONT_PT * s)))
         font.setBold(True)
         painter.setFont(font)
-        p = _TEXT_PAD
-        bw, bh = _text_box_size(ann.text, ann.width, w)
+        p = max(1, round(_TEXT_PAD * s))
+        bw, bh = _text_box_size(ann.text, ann.width, w, h)
         bg = QRect(cx, cy, bw, bh)
         painter.fillRect(bg, QColor(255, 255, 0, 200))
         painter.setPen(QPen(QColor("black"), 1))
@@ -173,30 +190,31 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
         painter.drawText(QRect(cx + p, cy + p, bw - p * 2, bh - p * 2),
                          Qt.TextFlag.TextWordWrap, ann.text)
         # Resize handle: small blue square at the bottom-right corner
-        hs = _RESIZE_HANDLE
+        hs = max(4, round(_RESIZE_HANDLE * s))
         painter.fillRect(cx + bw - hs, cy + bh - hs, hs, hs, QColor(70, 130, 230, 200))
 
     elif ann.type == "line" and ann.x2 is not None and ann.y2 is not None:
-        painter.setPen(QPen(QColor("#1565C0"), 2))
+        painter.setPen(QPen(QColor("#1565C0"), stroke))
         painter.drawLine(cx, cy, int(ann.x2 * w), int(ann.y2 * h))
 
     elif ann.type == "arrow" and ann.x2 is not None and ann.y2 is not None:
-        painter.setPen(QPen(QColor("#1565C0"), 2))
-        _draw_arrow(painter, cx, cy, int(ann.x2 * w), int(ann.y2 * h))
+        painter.setPen(QPen(QColor("#1565C0"), stroke))
+        _draw_arrow(painter, cx, cy, int(ann.x2 * w), int(ann.y2 * h), s)
 
     elif ann.type == "circle" and ann.x2 is not None and ann.y2 is not None:
-        painter.setPen(QPen(QColor("#1565C0"), 2))
+        painter.setPen(QPen(QColor("#1565C0"), stroke))
         radius = int(math.hypot(ann.x2 * w - cx, ann.y2 * h - cy))
         painter.drawEllipse(cx - radius, cy - radius, radius * 2, radius * 2)
 
 
-def _draw_arrow(painter: QPainter, x1: int, y1: int, x2: int, y2: int):
+def _draw_arrow(painter: QPainter, x1: int, y1: int, x2: int, y2: int,
+                scale: float = 1.0):
     """Draw a line with a filled arrowhead at *(x2, y2)*."""
     painter.drawLine(x1, y1, x2, y2)
     if x1 == x2 and y1 == y2:
         return
     angle = math.atan2(y2 - y1, x2 - x1)
-    size = 12
+    size = max(4, round(MARKER_RADIUS * scale))
     half = math.pi / 6
     pts = QPolygon([
         QPoint(x2, y2),
