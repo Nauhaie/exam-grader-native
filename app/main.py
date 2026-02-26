@@ -222,14 +222,19 @@ class MainWindow(QMainWindow):
         output_dir = data_store.ANNOTATED_EXPORT_DIR
         template = self._export_template
 
+        print(f"[Export] Starting annotated PDF export to: {output_dir}")
+        print(f"[Export] {len(self._students)} student(s) to process")
+
         exported = skipped = 0
         for i, student in enumerate(self._students):
             if progress.wasCanceled():
+                print("[Export] Cancelled by user.")
                 break
             progress.setValue(i)
             QApplication.processEvents()
             src = os.path.join(self._exams_dir, f"{student.student_number}.pdf")
             if not os.path.isfile(src):
+                print(f"[Export] SKIP {student.student_number}: PDF not found at {src}")
                 skipped += 1
                 continue
             anns = data_store.load_annotations(student.student_number)
@@ -245,15 +250,26 @@ class MainWindow(QMainWindow):
             except (KeyError, ValueError):
                 stem = f"{student.student_number}_annotated"
             dst = os.path.join(output_dir, f"{stem}.pdf")
+            log_path = os.path.join(output_dir, f"{stem}.log")
+
+            print(f"[Export] [{i+1}/{len(self._students)}] {student.student_number} → {dst}")
+            print(f"[Export]   log file → {log_path}")
 
             try:
-                pdf_exporter.bake_annotations(src, anns, dst)
+                pdf_exporter.bake_annotations(src, anns, dst, log_path=log_path)
+                if os.path.isfile(log_path):
+                    print(f"[Export]   log written OK ({os.path.getsize(log_path)} bytes)")
+                else:
+                    print(f"[Export]   WARNING: log file was NOT created at {log_path}")
                 exported += 1
             except Exception as exc:
+                print(f"[Export]   ERROR: {exc}")
                 QMessageBox.warning(
                     self, "Export Error",
                     f"Failed to export {student.student_number}:\n{exc}"
                 )
+
+        print(f"[Export] Done. exported={exported}, skipped={skipped}")
 
         progress.setValue(len(self._students))
         msg = f"Exported {exported} annotated PDF(s) to:\n{output_dir}"
