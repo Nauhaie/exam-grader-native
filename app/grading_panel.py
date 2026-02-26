@@ -7,7 +7,6 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
     QLineEdit,
-    QTableView,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -19,107 +18,9 @@ from models import GradingScheme, Student, Subquestion
 GRADE_SCALE = 20  # French 0–20 grading system
 
 
-class _FrozenColumnTableWidget(QTableWidget):
-    """
-    A QTableWidget whose first two columns are always visible (frozen/sticky).
-
-    The frozen columns are rendered in an overlay QTableView that sits in the
-    left viewport margin, so the scrollable area starts at column 2.
-    """
-
-    _N_FROZEN = 2
-    frozen_row_clicked = Signal(int)  # logical row index
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.verticalHeader().setVisible(False)
-        self.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-
-        # Frozen overlay: shows only the first _N_FROZEN columns
-        self._fv = QTableView(self)
-        self._fv.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._fv.verticalHeader().setVisible(False)
-        self._fv.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._fv.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._fv.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self._fv.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        self._fv.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents
-        )
-        self._fv.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self._fv.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self._fv.clicked.connect(
-            lambda idx: self.frozen_row_clicked.emit(idx.row())
-        )
-
-        # Keep vertical scroll positions in sync
-        self.verticalScrollBar().valueChanged.connect(
-            self._fv.verticalScrollBar().setValue
-        )
-        self._fv.verticalScrollBar().valueChanged.connect(
-            self.verticalScrollBar().setValue
-        )
-
-        # Mirror row-height changes to the frozen view
-        self.verticalHeader().sectionResized.connect(
-            lambda row, _old, new_h: self._fv.setRowHeight(row, new_h)
-        )
-
-    def refresh_frozen(self):
-        """
-        Synchronise the frozen overlay with the main table.
-        Call after every full table rebuild (setRowCount / setItem / …).
-        """
-        model = self.model()
-        if self._fv.model() is None:
-            self._fv.setModel(model)
-
-        # In the main table hide the frozen cols; in the overlay show only them
-        for col in range(model.columnCount()):
-            frozen = col < self._N_FROZEN
-            self.setColumnHidden(col, frozen)
-            self._fv.setColumnHidden(col, not frozen)
-
-        # Let the overlay measure its own column widths from the model data
-        self._fv.resizeColumnsToContents()
-
-        # Sync row heights from the main table to the overlay
-        for row in range(self.rowCount()):
-            self._fv.setRowHeight(row, self.rowHeight(row))
-
-        self._update_frozen_geometry()
-        self._fv.show()
-
-    # ── geometry helpers ──────────────────────────────────────────────────────
-
-    def _frozen_cols_width(self) -> int:
-        return sum(self._fv.columnWidth(c) for c in range(self._N_FROZEN))
-
-    def _update_frozen_geometry(self):
-        fw = self.frameWidth()
-        frozen_w = self._frozen_cols_width()
-        header_h = self.horizontalHeader().height()
-
-        # Push the main scroll viewport to the right of the frozen area
-        self.setViewportMargins(frozen_w, 0, 0, 0)
-
-        # Position the frozen overlay in the left margin (outside the viewport)
-        self._fv.setGeometry(
-            fw,
-            fw,
-            frozen_w,
-            self.viewport().height() + header_h,
-        )
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._update_frozen_geometry()
-
-
 class GradingPanel(QWidget):
-    grade_changed = Signal(str, str, float)  # student_number, subquestion_name, points
-    student_selected = Signal(object)        # Student
+    grade_changed   = Signal(str, str, float)   # student_number, sq_name, points
+    student_selected = Signal(object)            # Student
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -128,7 +29,10 @@ class GradingPanel(QWidget):
         self._grades: Dict[str, Dict[str, float]] = {}
         self._current_student: Optional[Student] = None
         self._subquestions: List[Subquestion] = []
+        self._exercises_for_sq: List[str] = []   # parallel list: exercise name per subquestion
         self._rebuilding = False
+        # Track the last grading cell focused per student  {student_number: sq_name}
+        self._last_focus: Dict[str, str] = {}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -138,30 +42,74 @@ class GradingPanel(QWidget):
         self._search.textChanged.connect(self._rebuild_table)
         layout.addWidget(self._search)
 
-        self._table = _FrozenColumnTableWidget()
+        self._table = QTableWidget()
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked |
             QAbstractItemView.EditTrigger.AnyKeyPressed
         )
-        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        hdr = self._table.horizontalHeader()
+        hdr.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setMinimumHeight(54)   # tall enough for 3-line headers
+        hdr.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._table.verticalHeader().setVisible(False)
         self._table.itemChanged.connect(self._on_item_changed)
         self._table.cellClicked.connect(self._on_cell_clicked)
-        self._table.frozen_row_clicked.connect(self._on_frozen_row_clicked)
         layout.addWidget(self._table)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def set_session(self, students: List[Student], scheme: GradingScheme, grades: Dict[str, dict]):
+    def set_session(
+        self,
+        students: List[Student],
+        scheme: GradingScheme,
+        grades: Dict[str, dict],
+    ):
         self._students = students
         self._scheme = scheme
         self._grades = grades
-        self._subquestions = [sq for ex in scheme.exercises for sq in ex.subquestions]
+        self._subquestions = []
+        self._exercises_for_sq = []
+        for ex in scheme.exercises:
+            for sq in ex.subquestions:
+                self._subquestions.append(sq)
+                self._exercises_for_sq.append(ex.name)
         self._rebuild_table()
 
     def set_current_student(self, student: Optional[Student]):
         self._current_student = student
         self._apply_highlight()
+
+    def focus_student_cell(self, student_number: str):
+        """Focus the appropriate grading cell for *student_number*.
+
+        If a cell was previously edited for this student, return to it.
+        Otherwise focus the first grading column.
+        """
+        filtered = self._filtered_students()
+        row = next(
+            (i for i, s in enumerate(filtered) if s.student_number == student_number),
+            -1,
+        )
+        if row < 0 or not self._subquestions:
+            return
+
+        last_sq = self._last_focus.get(student_number)
+        if last_sq and any(sq.name == last_sq for sq in self._subquestions):
+            col = 2 + next(i for i, sq in enumerate(self._subquestions)
+                           if sq.name == last_sq)
+        else:
+            col = 2   # first grading column
+
+        self._table.setFocus()
+        self._table.setCurrentCell(row, col)
+        self._table.scrollToItem(
+            self._table.item(row, col),
+            QAbstractItemView.ScrollHint.EnsureVisible,
+        )
+        item = self._table.item(row, col)
+        if item is not None:
+            self._table.editItem(item)
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
@@ -196,23 +144,22 @@ class GradingPanel(QWidget):
             self._table.blockSignals(False)
             self._rebuilding = False
         self._apply_highlight()
-        self._table.refresh_frozen()
 
     def _build_table_contents(self):
         filtered = self._filtered_students()
         sq_count = len(self._subquestions)
-        col_count = 2 + sq_count + 2  # Name, Number, subquestions, Total, Grade/20
-        self._table.setRowCount(len(filtered) + 1)  # +1 for average row
+        col_count = 2 + sq_count + 2   # Name, Number, subquestions, Total, Grade/20
+        self._table.setRowCount(len(filtered) + 1)   # +1 for average row
         self._table.setColumnCount(col_count)
 
+        # Column headers: "Exercise\nQuestion\n/max"
         headers = ["Student", "Number"]
-        for sq in self._subquestions:
-            headers.append(f"{sq.name}\n/{sq.max_points}")
+        for ex_name, sq in zip(self._exercises_for_sq, self._subquestions):
+            headers.append(f"{ex_name}\n{sq.name}\n/{sq.max_points:g}")
         headers += ["Total", "Grade /20"]
         self._table.setHorizontalHeaderLabels(headers)
 
         max_total = self._max_total()
-
         for row_idx, student in enumerate(filtered):
             sn = student.student_number
             sg = self._grades.get(sn, {})
@@ -257,26 +204,25 @@ class GradingPanel(QWidget):
         sq_count = len(self._subquestions)
         avg_row = len(filtered)
         max_total = self._max_total()
-
         included = [
             s for s in filtered
-            if any(self._grades.get(s.student_number, {}).get(sq.name) is not None
-                   for sq in self._subquestions)
+            if any(
+                self._grades.get(s.student_number, {}).get(sq.name) is not None
+                for sq in self._subquestions
+            )
         ]
-
-        bold_font = QFont()
-        bold_font.setBold(True)
+        bold = QFont()
+        bold.setBold(True)
 
         def _avg_item(text: str) -> QTableWidgetItem:
             it = QTableWidgetItem(text)
             it.setFlags(Qt.ItemFlag.ItemIsEnabled)
-            it.setFont(bold_font)
+            it.setFont(bold)
             it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             return it
 
         self._table.setItem(avg_row, 0, _avg_item(f"Avg ({len(included)})"))
         self._table.setItem(avg_row, 1, _avg_item(""))
-
         avg_total = 0.0
         for col_idx, sq in enumerate(self._subquestions):
             if included:
@@ -288,10 +234,12 @@ class GradingPanel(QWidget):
             avg_total += avg_val
             self._table.setItem(avg_row, 2 + col_idx,
                                  _avg_item(f"{avg_val:.1f}" if included else ""))
-
         self._table.setItem(avg_row, 2 + sq_count,
                              _avg_item(f"{avg_total:.1f}" if included else ""))
-        avg_grade = round((avg_total / max_total) * GRADE_SCALE, 1) if (max_total > 0 and included) else 0.0
+        avg_grade = (
+            round((avg_total / max_total) * GRADE_SCALE, 1)
+            if max_total > 0 and included else 0.0
+        )
         self._table.setItem(avg_row, 2 + sq_count + 1,
                              _avg_item(f"{avg_grade:.1f}" if included else ""))
 
@@ -313,7 +261,6 @@ class GradingPanel(QWidget):
         max_total = self._max_total()
         sg = self._grades.get(student.student_number, {})
         total = sum(sg.get(sq.name, 0) for sq in self._subquestions)
-
         total_item = self._table.item(row, 2 + sq_count)
         if total_item:
             total_item.setText(f"{total:.1f}")
@@ -325,13 +272,11 @@ class GradingPanel(QWidget):
     def _on_item_changed(self, item: QTableWidgetItem):
         if self._rebuilding:
             return
-        row = item.row()
-        col = item.column()
+        row, col = item.row(), item.column()
         filtered = self._filtered_students()
         if row >= len(filtered):
             return
-        sq_start = 2
-        sq_end = 2 + len(self._subquestions)
+        sq_start, sq_end = 2, 2 + len(self._subquestions)
         if col < sq_start or col >= sq_end:
             return
 
@@ -367,6 +312,8 @@ class GradingPanel(QWidget):
         if student.student_number not in self._grades:
             self._grades[student.student_number] = {}
         self._grades[student.student_number][sq.name] = val
+        # Record this cell as the last focused for this student
+        self._last_focus[student.student_number] = sq.name
         self.grade_changed.emit(student.student_number, sq.name, val)
 
         self._rebuilding = True
@@ -385,8 +332,11 @@ class GradingPanel(QWidget):
         if row >= len(filtered):
             return
         student = filtered[row]
-        if self._current_student is None or student.student_number != self._current_student.student_number:
+        # Track last-focused grading cell on click too
+        sq_start, sq_end = 2, 2 + len(self._subquestions)
+        if sq_start <= col < sq_end:
+            sq = self._subquestions[col - sq_start]
+            self._last_focus[student.student_number] = sq.name
+        if (self._current_student is None
+                or student.student_number != self._current_student.student_number):
             self.student_selected.emit(student)
-
-    def _on_frozen_row_clicked(self, row: int):
-        self._on_cell_clicked(row, 0)

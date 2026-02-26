@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 import data_store
+import pdf_exporter
 from grading_panel import GradingPanel
 from models import Student
 from pdf_viewer import PDFViewerPanel
@@ -46,6 +47,7 @@ class MainWindow(QMainWindow):
         export_menu = self.menuBar().addMenu("Export")
         export_menu.addAction("Export Grades as CSV…").triggered.connect(self._export_csv)
         export_menu.addAction("Export Grades as XLSX…").triggered.connect(self._export_xlsx)
+        export_menu.addAction("Export Annotated PDFs…").triggered.connect(self._export_annotated_pdfs)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(splitter)
@@ -53,6 +55,7 @@ class MainWindow(QMainWindow):
         # Left: PDF viewer only
         self._pdf_viewer = PDFViewerPanel()
         self._pdf_viewer.annotations_changed.connect(self._on_annotations_changed)
+        self._pdf_viewer.jump_requested.connect(self._on_jump_requested)
         splitter.addWidget(self._pdf_viewer)
 
         # Right: grading spreadsheet
@@ -177,6 +180,64 @@ class MainWindow(QMainWindow):
             )
         wb.save(path)
         QMessageBox.information(self, "Export", f"Grades exported to:\n{path}")
+
+    def _export_annotated_pdfs(self):
+        if not self._students:
+            QMessageBox.warning(self, "Export", "No session configured.")
+            return
+        output_dir = QFileDialog.getExistingDirectory(
+            self, "Select Output Directory for Annotated PDFs"
+        )
+        if not output_dir:
+            return
+
+        # Flush current student's annotations so the export is up-to-date
+        if self._current_student:
+            data_store.save_annotations(
+                self._current_student.student_number,
+                self._pdf_viewer.get_annotations(),
+            )
+
+        from PySide6.QtWidgets import QProgressDialog
+        progress = QProgressDialog(
+            "Exporting annotated PDFs…", "Cancel", 0, len(self._students), self
+        )
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.show()
+
+        exported = skipped = 0
+        for i, student in enumerate(self._students):
+            if progress.wasCanceled():
+                break
+            progress.setValue(i)
+            QApplication.processEvents()
+            src = os.path.join(self._exams_dir, f"{student.student_number}.pdf")
+            if not os.path.isfile(src):
+                skipped += 1
+                continue
+            anns = data_store.load_annotations(student.student_number)
+            dst = os.path.join(output_dir, f"{student.student_number}_annotated.pdf")
+            try:
+                pdf_exporter.bake_annotations(src, anns, dst)
+                exported += 1
+            except Exception as exc:
+                QMessageBox.warning(
+                    self, "Export Error",
+                    f"Failed to export {student.student_number}:\n{exc}"
+                )
+
+        progress.setValue(len(self._students))
+        msg = f"Exported {exported} annotated PDF(s) to:\n{output_dir}"
+        if skipped:
+            msg += f"\n({skipped} student(s) skipped — PDF not found)"
+        QMessageBox.information(self, "Export", msg)
+
+    def _on_jump_requested(self):
+        """'P' key: jump to the grading row for the current student."""
+        if self._current_student:
+            self._grading_panel.focus_student_cell(
+                self._current_student.student_number
+            )
 
 
 def main():
