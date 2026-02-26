@@ -66,27 +66,41 @@ def export_all(
             stem = f"{student.student_number}_annotated"
         dst = os.path.join(output_dir, f"{stem}.pdf")
 
-        bake_annotations(src, anns, dst)
+        log_path = os.path.join(output_dir, f"{stem}.log")
+        bake_annotations(src, anns, dst, log_path=log_path)
         exported += 1
     if progress_cb:
         progress_cb(total, total)
     return exported, skipped
 
 
-def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: str):
-    """Open *pdf_path*, draw *annotations* on each page, save to *output_path*."""
+def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: str,
+                     log_path: Optional[str] = None):
+    """Open *pdf_path*, draw *annotations* on each page, save to *output_path*.
+
+    If *log_path* is given, write a human-readable debug log alongside the PDF
+    with full coordinate details for every annotation so issues can be diagnosed.
+    """
+    log: List[str] = []
+    log.append(f"SOURCE : {pdf_path}")
+    log.append(f"OUTPUT : {output_path}")
+    log.append(f"ANNOTATIONS : {len(annotations)}")
+    log.append("")
+
     doc = fitz.open(pdf_path)
     for page_idx in range(doc.page_count):
         page = doc[page_idx]
-        page_anns = [a for a in annotations if a.page == page_idx]
-        if not page_anns:
-            continue
 
         # Visual dimensions (rotation-aware)
         pw, ph = page.rect.width, page.rect.height
         rot = page.rotation
         mw = page.mediabox.width
         mh = page.mediabox.height
+
+        log.append(f"=== PAGE {page_idx} ===")
+        log.append(f"  rotation       : {rot} deg")
+        log.append(f"  page.rect      : w={pw:.2f}  h={ph:.2f}  (visual/rotation-aware)")
+        log.append(f"  mediabox       : w={mw:.2f}  h={mh:.2f}  (native PDF units)")
 
         def to_draw(vx: float, vy: float):
             """Convert visual (page.rect) coords to PyMuPDF draw coords."""
@@ -98,8 +112,28 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                 return mw - vy, vx
             return vx, vy   # rot == 0
 
-        for ann in page_anns:
+        # ── "MARKED" watermark at top-left of every page ───────────────────
+        # This is a simple sanity-check stamp.  If it shows correctly in the
+        # viewer the basic text-insertion pipeline is working; if it is
+        # missing or garbled that reveals an environment-level problem.
+        marked_fontsize = 8
+        marked_rect = _text_rect(4, 4, 50, 12, rot, mw, mh)
+        marked_rotate = (360 - rot) % 360
+        page.insert_textbox(
+            marked_rect, "MARKED",
+            fontsize=marked_fontsize, fontname="helv",
+            color=(0.8, 0.0, 0.0), align=0, rotate=marked_rotate,
+        )
+        log.append(f"  MARKED stamp   : insert_textbox rect={marked_rect} rotate={marked_rotate}")
+
+        page_anns = [a for a in annotations if a.page == page_idx]
+        log.append(f"  annotations    : {len(page_anns)}")
+
+        for ann_i, ann in enumerate(page_anns):
             cx_v, cy_v = ann.x * pw, ann.y * ph
+            log.append(f"  -- ann[{ann_i}] type={ann.type!r}")
+            log.append(f"       frac   x={ann.x:.4f}  y={ann.y:.4f}")
+            log.append(f"       visual x={cx_v:.2f}  y={cy_v:.2f}  (pw={pw:.2f} ph={ph:.2f})")
 
             if ann.type == "checkmark":
                 _draw_checkmark(page, cx_v, cy_v, to_draw)
@@ -108,23 +142,60 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
             elif ann.type == "tilde":
                 _draw_tilde(page, cx_v, cy_v, rot, to_draw)
             elif ann.type == "text" and ann.text:
+                p = _TEXT_PAD_PT
+                if ann.width is not None:
+                    box_w = max(ann.width * pw, 10.0)
+                else:
+                    try:
+                        font = fitz.Font("helv")
+                        lines = ann.text.split("\n") if ann.text else [""]
+                        box_w = max(
+                            (font.text_length(ln, fontsize=_TEXT_FONTSIZE) for ln in lines),
+                            default=0.0,
+                        ) + p * 2
+                    except Exception:
+                        box_w = max(len(ann.text) * 5.5, 20.0)
+                    box_w = max(box_w, 20.0)
+                if ann.height is not None:
+                    box_h = max(ann.height * ph, 10.0)
+                else:
+                    _, box_h = _measure_text_box(ann.text, box_w, p, _TEXT_FONTSIZE)
+                box_rect  = _text_rect(cx_v,     cy_v,     box_w,         box_h,         rot, mw, mh)
+                text_rect = _text_rect(cx_v + p, cy_v + p, max(1.0, box_w - p * 2),
+                                                            max(1.0, box_h - p * 2), rot, mw, mh)
+                text_rotate = (360 - rot) % 360
+                log.append(f"       text   : {ann.text!r}")
+                log.append(f"       ann.width={ann.width}  ann.height={ann.height}")
+                log.append(f"       box_w={box_w:.2f}  box_h={box_h:.2f}  (PDF pts)")
+                log.append(f"       box_rect  : {box_rect}")
+                log.append(f"       text_rect : {text_rect}")
+                log.append(f"       text_rotate (insert_textbox rotate=) : {text_rotate}")
                 _draw_text(page, ann, cx_v, cy_v, pw, ph, rot, mw, mh)
             elif ann.type == "line" and ann.x2 is not None and ann.y2 is not None:
                 p1 = to_draw(cx_v, cy_v)
                 p2 = to_draw(ann.x2 * pw, ann.y2 * ph)
+                log.append(f"       draw_line : {p1} → {p2}")
                 page.draw_line(p1, p2, color=_RED, width=2)
             elif ann.type == "arrow" and ann.x2 is not None and ann.y2 is not None:
                 p1 = to_draw(cx_v, cy_v)
                 p2 = to_draw(ann.x2 * pw, ann.y2 * ph)
+                log.append(f"       draw_arrow : {p1} → {p2}")
                 _draw_arrow(page, p1[0], p1[1], p2[0], p2[1])
             elif ann.type == "circle" and ann.x2 is not None and ann.y2 is not None:
                 cx_d, cy_d = to_draw(cx_v, cy_v)
                 ex_d, ey_d = to_draw(ann.x2 * pw, ann.y2 * ph)
                 radius = math.hypot(ex_d - cx_d, ey_d - cy_d)
+                log.append(f"       draw_circle : center=({cx_d:.2f},{cy_d:.2f}) radius={radius:.2f}")
                 page.draw_circle((cx_d, cy_d), radius, color=_RED, width=2)
+
+        log.append("")
 
     doc.save(output_path, garbage=4, deflate=True)
     doc.close()
+
+    if log_path:
+        with open(log_path, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(log) + "\n")
 
 
 # ── Shape helpers ─────────────────────────────────────────────────────────────
