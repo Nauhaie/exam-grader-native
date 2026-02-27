@@ -88,7 +88,7 @@ def get_text_box_rect(ann: Annotation, img_width: int, img_height: int) -> Optio
         return None
     cx = int(ann.x * img_width)
     cy = int(ann.y * img_height)
-    bw, bh = _text_box_size(ann.text, ann.width, ann.height, img_width, img_height)
+    bw, bh = _text_box_size(ann.text, ann.width, img_width, img_height)
     return QRect(cx, cy, bw, bh)
 
 
@@ -138,15 +138,14 @@ def find_annotation_at(
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 def _text_box_size(text: str, width_frac: Optional[float],
-                   height_frac: Optional[float],
                    img_width: int, img_height: int) -> Tuple[int, int]:
     """Return *(width_px, height_px)* for a text annotation box.
 
     All sizes scale with *img_height* so the box appears the same physical
     size relative to the page regardless of zoom level.
 
-    If *height_frac* is stored (from the inline editor at commit time) it is
-    used directly so the rendered box always matches the editor height.
+    Height is always computed automatically from the text content and box width
+    so that all text is visible regardless of how much content there is.
     """
     s = img_height / BASE_PAGE_HEIGHT
     font = QFont()
@@ -162,12 +161,9 @@ def _text_box_size(text: str, width_frac: Optional[float],
         bw = max((fm.horizontalAdvance(ln) for ln in lines), default=0) + p * 2
         bw = max(bw, 20)
 
-    if height_frac is not None:
-        bh = max(int(height_frac * img_height), 20)
-    else:
-        inner = QRect(0, 0, bw - p * 2, _TEXT_WRAP_MAX_H)
-        bound = fm.boundingRect(inner, Qt.TextFlag.TextWordWrap, text)
-        bh = bound.height() + p * 2
+    inner = QRect(0, 0, bw - p * 2, _TEXT_WRAP_MAX_H)
+    bound = fm.boundingRect(inner, Qt.TextFlag.TextWordWrap, text)
+    bh = bound.height() + p * 2
     return bw, bh
 
 
@@ -210,7 +206,7 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
         font.setBold(True)
         painter.setFont(font)
         p = max(1, round(_TEXT_PAD * s))
-        bw, bh = _text_box_size(ann.text, ann.width, ann.height, w, h)
+        bw, bh = _text_box_size(ann.text, ann.width, w, h)
         bg = QRect(cx, cy, bw, bh)
         painter.fillRect(bg, QColor(255, 255, 0, 128))
         painter.setPen(QPen(QColor("black"), 1))

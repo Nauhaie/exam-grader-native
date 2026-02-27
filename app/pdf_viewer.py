@@ -93,13 +93,21 @@ class InlineTextEdit(QPlainTextEdit):
 
     def _adjust_height(self):
         """Resize widget height to match document content (no scrollbars)."""
-        # frameWidth()*2 for the border; +8 for top+bottom document content margins
-        doc_h = int(self.document().size().height()) + self.frameWidth() * 2 + 8
-        # Minimum: one line of text height based on current font
-        min_h = self.fontMetrics().height() + self.frameWidth() * 2 + 8
-        new_h = max(min_h, doc_h)
+        # QPlainTextDocumentLayout.documentSize() gives the actual visual height
+        # including all word-wrapped lines.
+        doc_h = int(self.document().documentLayout().documentSize().height())
+        margins = self.contentsMargins()
+        extra = self.frameWidth() * 2 + margins.top() + margins.bottom()
+        min_h = self.fontMetrics().height() + extra
+        new_h = max(min_h, doc_h + extra)
         if self.height() != new_h:
             self.resize(self.width(), new_h)
+
+    def resizeEvent(self, event):
+        """Re-check height when the width changes (word-wrap reflow)."""
+        super().resizeEvent(event)
+        if event.size().width() != event.oldSize().width():
+            self._adjust_height()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
@@ -769,40 +777,36 @@ class PDFViewerPanel(QWidget):
         editor.setMinimumWidth(_INLINE_EDITOR_MIN_W)
         editor.move(pos)
         if edit_idx >= 0:
-            # Load text first so _adjust_height fires, then override the size to
-            # exactly match the rendered box so the editor sits perfectly on top.
-            editor.setPlainText(self._annotations[edit_idx].text or "")
-            editor.selectAll()
             ann = self._annotations[edit_idx]
             rect = annotation_overlay.get_text_box_rect(ann, pm.width(), pm.height())
-            if rect:
-                editor.resize(max(rect.width(), _INLINE_EDITOR_MIN_W),
-                              rect.height())
-            else:
-                editor.resize(_INLINE_EDITOR_WIDTH, _INLINE_EDITOR_HEIGHT)
+            # Set width to match the annotation; height will be auto-computed.
+            init_w = max(rect.width(), _INLINE_EDITOR_MIN_W) if rect else _INLINE_EDITOR_WIDTH
+            editor.resize(init_w, _INLINE_EDITOR_HEIGHT)
+            editor.setPlainText(self._annotations[edit_idx].text or "")
+            editor.selectAll()
         else:
             editor.resize(_INLINE_EDITOR_WIDTH, _INLINE_EDITOR_HEIGHT)
         editor.show()
         editor.setFocus()
+        # Trigger height adjustment once the widget has a valid width/layout
+        editor._adjust_height()
         self._inline_editor = editor
 
         def _commit(text: str):
             self._inline_editor = None
             editor.deleteLater()
             if text.strip():
-                # Record both width and height as fractions of the page so the
-                # rendered box always matches the editor dimensions exactly.
+                # Only record width as a fraction of the page; height is always
+                # computed automatically from the text content.
                 width_frac = editor.width() / pm.width() if pm.width() > 0 else None
-                height_frac = editor.height() / pm.height() if pm.height() > 0 else None
                 if edit_idx >= 0:
                     self._annotations[edit_idx].text = text.strip()
                     self._annotations[edit_idx].width = width_frac
-                    self._annotations[edit_idx].height = height_frac
                 else:
                     self._annotations.append(Annotation(
                         page=self._current_page, type="text",
                         x=fx, y=fy, text=text.strip(),
-                        width=width_frac, height=height_frac,
+                        width=width_frac,
                     ))
                 self._rebuild_base_and_display()
                 self.annotations_changed.emit()

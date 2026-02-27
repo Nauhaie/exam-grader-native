@@ -108,6 +108,7 @@ def load_grading_settings_from_config(config_data: dict) -> GradingSettings:
         max_note=float(gs.get("max_note", 20.0)),
         rounding=float(gs.get("rounding", 0.5)),
         score_total=float(raw_st) if raw_st is not None else None,
+        debug_mode=bool(gs.get("debug_mode", False)),
     )
 
 
@@ -117,12 +118,32 @@ def save_grading_settings_to_config(config_data: dict, settings: GradingSettings
         "max_note": settings.max_note,
         "rounding": settings.rounding,
         "score_total": settings.score_total,
+        "debug_mode": settings.debug_mode,
     }
 
 
 def get_export_filename_template(config_data: dict) -> str:
     """Return the export filename template, with a sensible default."""
     return config_data.get("export_filename_template", "{student_number}_annotated")
+
+
+def save_export_template_to_config(config_data: dict, template: str) -> None:
+    """Write *template* into *config_data* in-place."""
+    config_data["export_filename_template"] = template
+
+
+def save_grading_scheme_to_config(config_data: dict, scheme: GradingScheme) -> None:
+    """Write *scheme* into *config_data* in-place (call save_project_config to persist)."""
+    config_data["exercises"] = [
+        {
+            "name": ex.name,
+            "subquestions": [
+                {"name": sq.name, "max_points": sq.max_points}
+                for sq in ex.subquestions
+            ],
+        }
+        for ex in scheme.exercises
+    ]
 
 
 # ── Students CSV ──────────────────────────────────────────────────────────────
@@ -182,7 +203,7 @@ def load_annotations(student_number: str) -> List[Annotation]:
             x2=item.get("x2"),
             y2=item.get("y2"),
             width=item.get("width"),
-            height=item.get("height"),
+            # height is intentionally not loaded; it is always computed from content
         ))
     return annotations
 
@@ -202,8 +223,7 @@ def save_annotations(student_number: str, annotations: List[Annotation]):
             item["y2"] = ann.y2
         if ann.width is not None:
             item["width"] = ann.width
-        if ann.height is not None:
-            item["height"] = ann.height
+        # height is intentionally NOT saved; it is always computed from content
         data.append(item)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
