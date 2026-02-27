@@ -106,7 +106,7 @@ class InlineTextEdit(QPlainTextEdit):
         fm = self.fontMetrics()
         if text:
             bound = fm.boundingRect(
-                QRect(0, 0, inner_w, 10_000),
+                QRect(0, 0, inner_w, annotation_overlay._TEXT_WRAP_MAX_H),
                 Qt.TextFlag.TextWordWrap,
                 text,
             )
