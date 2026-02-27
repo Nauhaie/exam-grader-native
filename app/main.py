@@ -5,6 +5,7 @@ import sys
 
 import openpyxl
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -51,9 +52,9 @@ class MainWindow(QMainWindow):
         quit_action.triggered.connect(self.close)
 
         project_menu = self.menuBar().addMenu("Project")
-        project_menu.addAction("Settings…").triggered.connect(
-            self._show_settings
-        )
+        settings_action = project_menu.addAction("Settings…")
+        settings_action.setMenuRole(QAction.MenuRole.NoRole)
+        settings_action.triggered.connect(self._show_settings)
         project_menu.addSeparator()
         project_menu.addAction("Export Grades as CSV").triggered.connect(self._export_csv)
         project_menu.addAction("Export Grades as XLSX").triggered.connect(self._export_xlsx)

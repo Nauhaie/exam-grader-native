@@ -184,14 +184,16 @@ class SettingsDialog(QDialog):
 
         self._debug_cb = QCheckBox("Enable debug mode")
         self._debug_cb.setChecked(settings.debug_mode)
-        self._debug_cb.setToolTip(
-            "When enabled:\n"
-            "  • Print detailed debug messages to the terminal during export\n"
-            "  • Write a .log file next to each exported annotated PDF\n"
-            "\n"
-            "When disabled, no terminal output or log files are produced."
-        )
         layout.addWidget(self._debug_cb)
+
+        debug_hint = QLabel(
+            "When enabled, detailed messages are printed to the terminal during "
+            "export and a <tt>.log</tt> file is written next to each annotated PDF."
+        )
+        debug_hint.setWordWrap(True)
+        debug_hint.setStyleSheet("color: #555;")
+        debug_hint.setContentsMargins(20, 2, 0, 0)
+        layout.addWidget(debug_hint)
 
         layout.addStretch()
         return w
