@@ -75,17 +75,17 @@ def export_all(
 
 
 def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: str,
-                     log_path: Optional[str] = None):
+                     log_path: Optional[str] = None, debug: bool = True):
     """Open *pdf_path*, draw *annotations* on each page, save to *output_path*.
 
-    If *log_path* is given, write a human-readable debug log alongside the PDF
-    with full coordinate details for every annotation so issues can be diagnosed.
-    The log file is opened immediately and flushed after every entry so that a
-    partial log is preserved even if the process crashes during save.
+    If *log_path* is given and *debug* is True, write a human-readable debug log
+    alongside the PDF with full coordinate details for every annotation so issues
+    can be diagnosed.  When *debug* is False, no terminal output and no log file
+    are produced.
     """
     # Open the log file first so partial output is preserved on any crash.
     _log_fh = None
-    if log_path:
+    if debug and log_path:
         try:
             _log_fh = open(log_path, "w", encoding="utf-8")
             print(f"[bake] log file opened: {log_path}")
@@ -99,16 +99,18 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
             _log_fh.flush()
 
     try:
-        print(f"[bake] source  : {pdf_path}")
-        print(f"[bake] output  : {output_path}")
-        print(f"[bake] annotations: {len(annotations)}")
+        if debug:
+            print(f"[bake] source  : {pdf_path}")
+            print(f"[bake] output  : {output_path}")
+            print(f"[bake] annotations: {len(annotations)}")
         _log(f"SOURCE : {pdf_path}")
         _log(f"OUTPUT : {output_path}")
         _log(f"ANNOTATIONS : {len(annotations)}")
         _log("")
 
         try:
-            print("[bake] opening PDF…")
+            if debug:
+                print("[bake] opening PDF…")
             doc = fitz.open(pdf_path)
             try:
                 for page_idx in range(doc.page_count):
@@ -184,17 +186,15 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                                     box_w = max(len(ann.text) * 5.5, 20.0)
                                 box_w = max(box_w, 20.0)
                             _, measured_box_h = _measure_text_box(ann.text, box_w, p, _TEXT_FONTSIZE)
-                            if ann.height is not None:
-                                box_h = max(ann.height * ph, measured_box_h, 10.0)
-                            else:
-                                box_h = max(measured_box_h, 10.0)
+                            # Height is always computed from content; never stored.
+                            box_h = max(measured_box_h, 10.0)
                             box_rect  = _text_rect(cx_v,     cy_v,     box_w,         box_h,         rot, mw, mh)
                             text_rect = _text_rect(cx_v + p, cy_v + p, max(1.0, box_w - p * 2),
                                                                         max(1.0, box_h - p * 2), rot, mw, mh)
                             text_rotate = rot
                             _log(f"       text   : {ann.text!r}")
-                            _log(f"       ann.width={ann.width}  ann.height={ann.height}")
-                            _log(f"       box_w={box_w:.2f}  box_h={box_h:.2f}  (PDF pts, measured_box_h={measured_box_h:.2f})")
+                            _log(f"       ann.width={ann.width}")
+                            _log(f"       box_w={box_w:.2f}  box_h={box_h:.2f}  (PDF pts)")
                             _log(f"       box_rect  : {box_rect}")
                             _log(f"       text_rect : {text_rect}")
                             _log(f"       text_rotate (insert_textbox rotate=) : {text_rotate}")
@@ -225,27 +225,33 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                 save_ok = False
                 for garbage_level in (0, 4):
                     try:
-                        print(f"[bake] saving with garbage={garbage_level}…")
+                        if debug:
+                            print(f"[bake] saving with garbage={garbage_level}…")
                         doc.save(output_path, garbage=garbage_level, deflate=True)
                         save_ok = True
-                        print(f"[bake] save OK (garbage={garbage_level})")
+                        if debug:
+                            print(f"[bake] save OK (garbage={garbage_level})")
                         _log(f"SAVE OK (garbage={garbage_level})")
                         break
                     except Exception as exc:
-                        print(f"[bake] save FAILED (garbage={garbage_level}): {exc}")
+                        if debug:
+                            print(f"[bake] save FAILED (garbage={garbage_level}): {exc}")
                         _log(f"SAVE FAILED (garbage={garbage_level}): {exc}")
                 if not save_ok:
-                    print("[bake] ERROR: PDF could not be saved – all garbage levels failed.")
+                    if debug:
+                        print("[bake] ERROR: PDF could not be saved – all garbage levels failed.")
                     _log("ERROR: PDF could not be saved – all garbage levels failed.")
             finally:
                 doc.close()
         except Exception as exc:
-            print(f"[bake] FATAL ERROR opening PDF: {exc}")
+            if debug:
+                print(f"[bake] FATAL ERROR opening PDF: {exc}")
             _log(f"FATAL ERROR opening PDF: {exc}")
     finally:
         if _log_fh:
             _log_fh.close()
-            print(f"[bake] log file closed: {log_path}")
+            if debug:
+                print(f"[bake] log file closed: {log_path}")
 
 
 # ── Shape helpers ─────────────────────────────────────────────────────────────
@@ -354,16 +360,9 @@ def _draw_text(page, ann: Annotation, cx_v: float, cy_v: float,
             box_w = max(len(text) * 5.5, 20.0)
         box_w = max(box_w, 20.0)
 
-    # Always measure the minimum height required to fit the text at this width.
-    # If a stored height (from the inline editor) is smaller than the measured
-    # minimum, the text won't fit inside insert_textbox and will be invisible.
-    # Using max() ensures the box is always tall enough to show the text while
-    # still respecting the user's sizing when it is larger.
+    # Height is always computed from content; never stored.
     _, measured_box_h = _measure_text_box(text, box_w, p, _TEXT_FONTSIZE)
-    if ann.height is not None:
-        box_h = max(ann.height * ph, measured_box_h, 10.0)
-    else:
-        box_h = max(measured_box_h, 10.0)
+    box_h = max(measured_box_h, 10.0)
 
     box_rect  = _text_rect(cx_v,     cy_v,     box_w,         box_h,         rot, mw, mh)
     text_rect = _text_rect(cx_v + p, cy_v + p, max(1.0, box_w - p * 2),

@@ -18,9 +18,9 @@ from PySide6.QtWidgets import (
 import data_store
 import pdf_exporter
 from grading_panel import GradingPanel
-from grading_settings_dialog import GradingSettingsDialog
 from models import GradingSettings, Student
 from pdf_viewer import PDFViewerPanel
+from settings_dialog import SettingsDialog
 from setup_dialog import SetupDialog
 
 
@@ -51,8 +51,8 @@ class MainWindow(QMainWindow):
         quit_action.triggered.connect(self.close)
 
         grading_menu = self.menuBar().addMenu("Grading")
-        grading_menu.addAction("Grading Settings…").triggered.connect(
-            self._show_grading_settings
+        grading_menu.addAction("Settings…").triggered.connect(
+            self._show_settings
         )
 
         export_menu = self.menuBar().addMenu("Export")
@@ -114,20 +114,38 @@ class MainWindow(QMainWindow):
         if self._students:
             self._select_student(self._students[0])
 
-    def _show_grading_settings(self):
+    def _show_settings(self):
         if not self._grading_scheme:
-            QMessageBox.warning(self, "Grading Settings", "Open a project first.")
+            QMessageBox.warning(self, "Settings", "Open a project first.")
             return
         exam_pts = self._grading_panel.exam_max_points()
-        dlg = GradingSettingsDialog(self._grading_settings, exam_pts, self)
+        dlg = SettingsDialog(
+            self._grading_settings,
+            self._grading_scheme,
+            exam_pts,
+            self._export_template,
+            self,
+        )
         if dlg.exec():
             self._grading_settings = dlg.get_settings()
+            self._export_template = dlg.get_export_template()
+            new_scheme = dlg.get_grading_scheme()
+            self._grading_scheme = new_scheme
             self._grading_panel.set_grading_settings(self._grading_settings)
-            # Persist immediately to config.json
+            self._grading_panel.set_session(
+                self._students, self._grading_scheme, self._grades
+            )
+            # Persist to config.json
             project_dir = data_store.get_project_dir()
             if project_dir:
                 data_store.save_grading_settings_to_config(
                     self._project_config, self._grading_settings
+                )
+                data_store.save_export_template_to_config(
+                    self._project_config, self._export_template
+                )
+                data_store.save_grading_scheme_to_config(
+                    self._project_config, self._grading_scheme
                 )
                 data_store.save_project_config(project_dir, self._project_config)
 
@@ -221,20 +239,24 @@ class MainWindow(QMainWindow):
 
         output_dir = data_store.ANNOTATED_EXPORT_DIR
         template = self._export_template
+        debug = self._grading_settings.debug_mode
 
-        print(f"[Export] Starting annotated PDF export to: {output_dir}")
-        print(f"[Export] {len(self._students)} student(s) to process")
+        if debug:
+            print(f"[Export] Starting annotated PDF export to: {output_dir}")
+            print(f"[Export] {len(self._students)} student(s) to process")
 
         exported = skipped = 0
         for i, student in enumerate(self._students):
             if progress.wasCanceled():
-                print("[Export] Cancelled by user.")
+                if debug:
+                    print("[Export] Cancelled by user.")
                 break
             progress.setValue(i)
             QApplication.processEvents()
             src = os.path.join(self._exams_dir, f"{student.student_number}.pdf")
             if not os.path.isfile(src):
-                print(f"[Export] SKIP {student.student_number}: PDF not found at {src}")
+                if debug:
+                    print(f"[Export] SKIP {student.student_number}: PDF not found at {src}")
                 skipped += 1
                 continue
             anns = data_store.load_annotations(student.student_number)
@@ -250,26 +272,30 @@ class MainWindow(QMainWindow):
             except (KeyError, ValueError):
                 stem = f"{student.student_number}_annotated"
             dst = os.path.join(output_dir, f"{stem}.pdf")
-            log_path = os.path.join(output_dir, f"{stem}.log")
+            log_path = os.path.join(output_dir, f"{stem}.log") if debug else None
 
-            print(f"[Export] [{i+1}/{len(self._students)}] {student.student_number} → {dst}")
-            print(f"[Export]   log file → {log_path}")
+            if debug:
+                print(f"[Export] [{i+1}/{len(self._students)}] {student.student_number} → {dst}")
+                print(f"[Export]   log file → {log_path}")
 
             try:
-                pdf_exporter.bake_annotations(src, anns, dst, log_path=log_path)
-                if os.path.isfile(log_path):
+                pdf_exporter.bake_annotations(src, anns, dst, log_path=log_path,
+                                              debug=debug)
+                if debug and log_path and os.path.isfile(log_path):
                     print(f"[Export]   log written OK ({os.path.getsize(log_path)} bytes)")
-                else:
+                elif debug and log_path:
                     print(f"[Export]   WARNING: log file was NOT created at {log_path}")
                 exported += 1
             except Exception as exc:
-                print(f"[Export]   ERROR: {exc}")
+                if debug:
+                    print(f"[Export]   ERROR: {exc}")
                 QMessageBox.warning(
                     self, "Export Error",
                     f"Failed to export {student.student_number}:\n{exc}"
                 )
 
-        print(f"[Export] Done. exported={exported}, skipped={skipped}")
+        if debug:
+            print(f"[Export] Done. exported={exported}, skipped={skipped}")
 
         progress.setValue(len(self._students))
         msg = f"Exported {exported} annotated PDF(s) to:\n{output_dir}"
