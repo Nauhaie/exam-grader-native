@@ -57,8 +57,9 @@ class SettingsDialog(QDialog):
         layout.addWidget(tabs)
 
         tabs.addTab(self._build_grading_tab(grading_settings), "Grading")
-        tabs.addTab(self._build_export_tab(grading_settings, export_template), "Export & Debug")
+        tabs.addTab(self._build_export_tab(grading_settings, export_template), "Export")
         tabs.addTab(self._build_scheme_tab(grading_scheme), "Grading Scheme")
+        tabs.addTab(self._build_advanced_tab(grading_settings), "Advanced")
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -152,9 +153,11 @@ class SettingsDialog(QDialog):
         layout.setContentsMargins(12, 12, 12, 12)
 
         form = QFormLayout()
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         layout.addLayout(form)
 
         self._template_edit = QLineEdit(template)
+        self._template_edit.setMinimumWidth(300)
         self._template_edit.setToolTip(
             "Filename template for exported annotated PDFs (without .pdf extension).\n"
             "Available placeholders: {student_number}, {last_name}, {first_name},\n"
@@ -171,7 +174,13 @@ class SettingsDialog(QDialog):
         hint.setStyleSheet("color: #555;")
         layout.addWidget(hint)
 
-        layout.addSpacing(16)
+        layout.addStretch()
+        return w
+
+    def _build_advanced_tab(self, settings: GradingSettings) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setContentsMargins(12, 12, 12, 12)
 
         self._debug_cb = QCheckBox("Enable debug mode")
         self._debug_cb.setChecked(settings.debug_mode)
