@@ -43,7 +43,6 @@ _PAN_MOD = Qt.KeyboardModifier.MetaModifier | Qt.KeyboardModifier.ControlModifie
 
 _INLINE_EDITOR_MIN_W  = 120
 _INLINE_EDITOR_WIDTH  = 200
-_INLINE_EDITOR_HEIGHT = 80
 
 
 @dataclass
@@ -92,14 +91,30 @@ class InlineTextEdit(QPlainTextEdit):
         self.document().contentsChanged.connect(self._adjust_height)
 
     def _adjust_height(self):
-        """Resize widget height to match document content (no scrollbars)."""
-        # QPlainTextDocumentLayout.documentSize() gives the actual visual height
-        # including all word-wrapped lines.
-        doc_h = int(self.document().documentLayout().documentSize().height())
+        """Resize widget height to match document content (no scrollbars).
+
+        Uses QFontMetrics.boundingRect with word-wrap to compute the exact
+        height needed, which is reliable even before the widget is shown
+        (unlike QPlainTextDocumentLayout.documentSize which can undercount).
+        """
+        text = self.toPlainText() or ""
         margins = self.contentsMargins()
-        extra = self.frameWidth() * 2 + margins.top() + margins.bottom()
-        min_h = self.fontMetrics().height() + extra
-        new_h = max(min_h, doc_h + extra)
+        frame = self.frameWidth() * 2
+        extra_h = frame + margins.top() + margins.bottom()
+        inner_w = max(1, self.width() - frame - margins.left() - margins.right())
+
+        fm = self.fontMetrics()
+        if text:
+            bound = fm.boundingRect(
+                QRect(0, 0, inner_w, 10_000),
+                Qt.TextFlag.TextWordWrap,
+                text,
+            )
+            doc_h = bound.height()
+        else:
+            doc_h = fm.height()
+
+        new_h = max(fm.height() + extra_h, doc_h + extra_h)
         if self.height() != new_h:
             self.resize(self.width(), new_h)
 
@@ -779,17 +794,17 @@ class PDFViewerPanel(QWidget):
         if edit_idx >= 0:
             ann = self._annotations[edit_idx]
             rect = annotation_overlay.get_text_box_rect(ann, pm.width(), pm.height())
-            # Set width and initial height to match the existing annotation box.
+            # Set width first so word-wrap height calculation is correct when
+            # setPlainText triggers _adjust_height.
             init_w = max(rect.width(), _INLINE_EDITOR_MIN_W) if rect else _INLINE_EDITOR_WIDTH
-            init_h = rect.height() if rect else _INLINE_EDITOR_HEIGHT
-            editor.resize(init_w, init_h)
+            editor.resize(init_w, editor.height())
             editor.setPlainText(self._annotations[edit_idx].text or "")
             editor.selectAll()
         else:
-            editor.resize(_INLINE_EDITOR_WIDTH, _INLINE_EDITOR_HEIGHT)
+            editor.resize(_INLINE_EDITOR_WIDTH, editor.height())
         editor.show()
         editor.setFocus()
-        # Defer height adjustment so the document layout is fully processed
+        # Defer height adjustment so the widget geometry is finalised
         QTimer.singleShot(0, editor._adjust_height)
         self._inline_editor = editor
 
