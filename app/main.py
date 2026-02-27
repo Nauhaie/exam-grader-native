@@ -50,15 +50,14 @@ class MainWindow(QMainWindow):
         quit_action = file_menu.addAction("Quit")
         quit_action.triggered.connect(self.close)
 
-        grading_menu = self.menuBar().addMenu("Grading")
-        grading_menu.addAction("Settings…").triggered.connect(
+        project_menu = self.menuBar().addMenu("Project")
+        project_menu.addAction("Settings…").triggered.connect(
             self._show_settings
         )
-
-        export_menu = self.menuBar().addMenu("Export")
-        export_menu.addAction("Export Grades as CSV").triggered.connect(self._export_csv)
-        export_menu.addAction("Export Grades as XLSX").triggered.connect(self._export_xlsx)
-        export_menu.addAction("Export Annotated PDFs").triggered.connect(self._export_annotated_pdfs)
+        project_menu.addSeparator()
+        project_menu.addAction("Export Grades as CSV").triggered.connect(self._export_csv)
+        project_menu.addAction("Export Grades as XLSX").triggered.connect(self._export_xlsx)
+        project_menu.addAction("Export Annotated PDFs").triggered.connect(self._export_annotated_pdfs)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(splitter)

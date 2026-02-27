@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 import fitz  # pymupdf
-from PySide6.QtCore import QObject, QEvent, QPoint, QRect, Qt, Signal
+from PySide6.QtCore import QObject, QEvent, QPoint, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QCursor, QFont, QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QLineEdit,
@@ -779,17 +779,18 @@ class PDFViewerPanel(QWidget):
         if edit_idx >= 0:
             ann = self._annotations[edit_idx]
             rect = annotation_overlay.get_text_box_rect(ann, pm.width(), pm.height())
-            # Set width to match the annotation; height will be auto-computed.
+            # Set width and initial height to match the existing annotation box.
             init_w = max(rect.width(), _INLINE_EDITOR_MIN_W) if rect else _INLINE_EDITOR_WIDTH
-            editor.resize(init_w, _INLINE_EDITOR_HEIGHT)
+            init_h = rect.height() if rect else _INLINE_EDITOR_HEIGHT
+            editor.resize(init_w, init_h)
             editor.setPlainText(self._annotations[edit_idx].text or "")
             editor.selectAll()
         else:
             editor.resize(_INLINE_EDITOR_WIDTH, _INLINE_EDITOR_HEIGHT)
         editor.show()
         editor.setFocus()
-        # Trigger height adjustment once the widget has a valid width/layout
-        editor._adjust_height()
+        # Defer height adjustment so the document layout is fully processed
+        QTimer.singleShot(0, editor._adjust_height)
         self._inline_editor = editor
 
         def _commit(text: str):
