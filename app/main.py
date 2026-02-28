@@ -85,6 +85,8 @@ class MainWindow(QMainWindow):
             if widget.testAttribute(Qt.WidgetAttribute.WA_SetCursor):
                 widget.setCursor(widget.cursor())
         # Override-cursor cycle to flush platform cursor state.
+        # The specific shape (ArrowCursor) is irrelevant — the push/pop
+        # forces Qt's Cocoa backend to re-query the native cursor.
         QApplication.setOverrideCursor(Qt.CursorShape.ArrowCursor)
         QApplication.restoreOverrideCursor()
 
@@ -261,8 +263,11 @@ class MainWindow(QMainWindow):
         scheme_total = self._grading_scheme.max_total()
         score_total = gs.score_total if gs.score_total is not None else scheme_total
         pts = sum(sg.get(sq.name, 0) or 0 for sq in subquestions)
-        rounding = max(0.001, gs.rounding)
-        grade = round((pts / score_total) * gs.max_note / rounding) * rounding if score_total > 0 else 0.0
+        if score_total <= 0:
+            return pts, 0.0
+        # Round to nearest multiple of gs.rounding (same as GradingPanel)
+        step = max(0.001, gs.rounding)
+        grade = round((pts / score_total) * gs.max_note / step) * step
         return pts, grade
 
     def _extra_field_names(self) -> List[str]:
