@@ -580,7 +580,9 @@ class PDFViewerPanel(QWidget):
             # Show grab cursor when hovering over a draggable annotation
             drag = self._find_drag_target(fx, fy)
             if drag is not None:
-                if drag.kind in ("text-resize", "circle-edge"):
+                if drag.kind == "text-resize":
+                    self._page_label.setCursor(Qt.CursorShape.SizeHorCursor)
+                elif drag.kind == "circle-edge":
                     self._page_label.setCursor(Qt.CursorShape.SizeVerCursor)
                 elif drag.kind in ("rectcross-tl", "rectcross-tr",
                                     "rectcross-bl", "rectcross-br"):

@@ -70,7 +70,9 @@ class MainWindow(QMainWindow):
         self._pdf_viewer.jump_requested.connect(self._on_jump_requested)
         self._pdf_viewer.student_prev_requested.connect(self._select_prev_student)
         self._pdf_viewer.student_next_requested.connect(self._select_next_student)
-        self._pdf_viewer.open_settings_presets_requested.connect(self._show_settings)
+        self._pdf_viewer.open_settings_presets_requested.connect(
+            lambda: self._show_settings(initial_tab=3)
+        )
         splitter.addWidget(self._pdf_viewer)
 
         # Right: grading spreadsheet
@@ -123,7 +125,7 @@ class MainWindow(QMainWindow):
         if self._students:
             self._select_student(self._students[0])
 
-    def _show_settings(self):
+    def _show_settings(self, initial_tab: int = 0):
         if not self._grading_scheme:
             QMessageBox.warning(self, "Settings", "Open a project first.")
             return
@@ -136,6 +138,8 @@ class MainWindow(QMainWindow):
             self._preset_annotations,
             self,
         )
+        if initial_tab:
+            dlg.select_tab(initial_tab)
         if dlg.exec():
             self._grading_settings = dlg.get_settings()
             data_store.set_debug(self._grading_settings.debug_mode)
