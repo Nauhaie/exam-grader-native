@@ -26,6 +26,12 @@ from settings_dialog import SettingsDialog
 from setup_dialog import SetupDialog
 
 
+class _EmptyDefault(dict):
+    """dict subclass that returns 'EMPTY' for missing or empty-string keys."""
+    def __missing__(self, key):
+        return "EMPTY"
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -132,6 +138,14 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Settings", "Open a project first.")
             return
         exam_pts = self._grading_panel.exam_max_points()
+        # Collect the union of all extra field names across all students
+        extra_names: list = []
+        seen: set = set()
+        for s in self._students:
+            for k in s.extra_fields:
+                if k not in seen:
+                    seen.add(k)
+                    extra_names.append(k)
         dlg = SettingsDialog(
             self._grading_settings,
             self._grading_scheme,
@@ -139,6 +153,7 @@ class MainWindow(QMainWindow):
             self._export_template,
             self._preset_annotations,
             self,
+            extra_field_names=extra_names,
         )
         if initial_tab:
             dlg.select_tab(initial_tab)
@@ -279,6 +294,10 @@ class MainWindow(QMainWindow):
         template = self._export_template
         debug = self._grading_settings.debug_mode
 
+        os.makedirs(output_dir, exist_ok=True)
+        if debug:
+            os.makedirs(data_store.ANNOTATED_LOGS_DIR, exist_ok=True)
+
         if debug:
             print(f"[Export] Starting annotated PDF export to: {output_dir}")
             print(f"[Export] {len(self._students)} student(s) to process")
@@ -299,18 +318,18 @@ class MainWindow(QMainWindow):
                 continue
             anns = data_store.load_annotations(student.student_number)
 
-            fields = dict(student.extra_fields)
+            fields = {k: (v if v else "EMPTY") for k, v in student.extra_fields.items()}
             fields.update(
-                student_number=student.student_number,
-                last_name=student.last_name,
-                first_name=student.first_name,
+                student_number=student.student_number or "EMPTY",
+                last_name=student.last_name or "EMPTY",
+                first_name=student.first_name or "EMPTY",
             )
             try:
-                stem = template.format_map(fields)
-            except (KeyError, ValueError):
+                stem = template.format_map(_EmptyDefault(fields))
+            except ValueError:
                 stem = f"{student.student_number}_annotated"
             dst = os.path.join(output_dir, f"{stem}.pdf")
-            log_path = os.path.join(output_dir, f"{stem}.log") if debug else None
+            log_path = os.path.join(data_store.ANNOTATED_LOGS_DIR, f"{stem}.log") if debug else None
 
             if debug:
                 print(f"[Export] [{i+1}/{len(self._students)}] {student.student_number} → {dst}")

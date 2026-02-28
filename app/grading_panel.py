@@ -5,6 +5,7 @@ from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QComboBox,
     QHBoxLayout,
@@ -181,6 +182,11 @@ class GradingPanel(QWidget):
         # Re-position overlays when the viewport resizes
         self._table.viewport().installEventFilter(self)
 
+        # Forward wheel events from frozen overlays to the main table so that
+        # scrolling over sticky headers/columns moves the main view.
+        for fz in (self._fz_corner, self._fz_header, self._fz_left):
+            fz.viewport().installEventFilter(self)
+
     # ── Public API ────────────────────────────────────────────────────────────
 
     def set_session(
@@ -247,8 +253,7 @@ class GradingPanel(QWidget):
         if data_row < 0 or not self._subquestions:
             return
 
-        extra_count = len(self._extra_field_names()) if self._show_extra else 0
-        sq_start = 2 + extra_count
+        sq_start = 2
         row = _HEADER_ROWS + data_row
 
         last_sq = self._last_focus.get(student_number)
@@ -339,9 +344,10 @@ class GradingPanel(QWidget):
         sq_count = len(self._subquestions)
         extra_names = self._extra_field_names() if self._show_extra else []
         extra_count = len(extra_names)
-        # Layout: Name | Number | [extra…] | subquestions… | Total | Grade/20
-        sq_start = 2 + extra_count
-        col_count = sq_start + sq_count + 2
+        # Layout: Name | Number | subquestions… | Total | Grade/20 | [extra…]
+        sq_start = 2
+        extra_start = sq_start + sq_count + 2
+        col_count = extra_start + extra_count
         # _HEADER_ROWS frozen header rows + data rows + avg row + exercise-avg row
         self._table.setRowCount(_HEADER_ROWS + len(filtered) + 2)
         self._table.setColumnCount(col_count)
@@ -358,9 +364,9 @@ class GradingPanel(QWidget):
                 f = it.font(); f.setBold(True); it.setFont(f)
             return it
 
-        # Fixed columns (Student, Number, extras, Total, Grade/20) span all 3 header rows
-        fixed_cols = list(range(2 + extra_count)) + [sq_start + sq_count, sq_start + sq_count + 1]
-        fixed_labels = ["Student", "Number"] + extra_names + ["Total", self._grade_label()]
+        # Fixed columns (Student, Number, Total, Grade/20, extras) span all 3 header rows
+        fixed_cols = [0, 1, sq_start + sq_count, sq_start + sq_count + 1] + list(range(extra_start, extra_start + extra_count))
+        fixed_labels = ["Student", "Number", "Total", self._grade_label()] + extra_names
         for c, label in zip(fixed_cols, fixed_labels):
             self._table.setSpan(0, c, _HEADER_ROWS, 1)
             self._table.setItem(0, c, _hdr(label, _BG_MISC, bold=True))
@@ -401,13 +407,6 @@ class GradingPanel(QWidget):
             num_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             self._table.setItem(r, 1, num_item)
 
-            for ei, ename in enumerate(extra_names):
-                val = student.extra_fields.get(ename, "")
-                it = QTableWidgetItem(val)
-                it.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-                it.setForeground(QColor(80, 80, 80))
-                self._table.setItem(r, 2 + ei, it)
-
             total = 0.0
             for col_idx, sq in enumerate(self._subquestions):
                 val = sg.get(sq.name)
@@ -434,12 +433,20 @@ class GradingPanel(QWidget):
             grade_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self._table.setItem(r, sq_start + sq_count + 1, grade_item)
 
+            for ei, ename in enumerate(extra_names):
+                val = student.extra_fields.get(ename, "")
+                it = QTableWidgetItem(val)
+                it.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                it.setForeground(QColor(80, 80, 80))
+                self._table.setItem(r, extra_start + ei, it)
+
         self._fill_average_row(filtered)
 
     def _fill_average_row(self, filtered: List[Student]):
         sq_count = len(self._subquestions)
         extra_count = len(self._extra_field_names()) if self._show_extra else 0
-        sq_start = 2 + extra_count
+        sq_start = 2
+        extra_start = sq_start + sq_count + 2
         avg_row = _HEADER_ROWS + len(filtered)
         included = [
             s for s in filtered
@@ -460,8 +467,6 @@ class GradingPanel(QWidget):
 
         self._table.setItem(avg_row, 0, _avg_item(f"Avg ({len(included)})"))
         self._table.setItem(avg_row, 1, _avg_item(""))
-        for ei in range(extra_count):
-            self._table.setItem(avg_row, 2 + ei, _avg_item(""))
         avg_total = 0.0
         for col_idx, sq in enumerate(self._subquestions):
             if included:
@@ -478,6 +483,8 @@ class GradingPanel(QWidget):
         avg_grade = self._compute_grade(avg_total) if included else 0.0
         self._table.setItem(avg_row, sq_start + sq_count + 1,
                              _avg_item(f"{avg_grade:g}" if included else ""))
+        for ei in range(extra_count):
+            self._table.setItem(avg_row, extra_start + ei, _avg_item(""))
 
         self._fill_exercise_average_row(filtered, included)
 
@@ -486,7 +493,8 @@ class GradingPanel(QWidget):
         """Bottom row: one merged cell per exercise showing its average score."""
         sq_count = len(self._subquestions)
         extra_count = len(self._extra_field_names()) if self._show_extra else 0
-        sq_start = 2 + extra_count
+        sq_start = 2
+        extra_start = sq_start + sq_count + 2
         ex_row = _HEADER_ROWS + len(filtered) + 1
 
         italic_bold = QFont()
@@ -504,11 +512,11 @@ class GradingPanel(QWidget):
         # Fixed columns
         self._table.setItem(ex_row, 0, _ex_item("Ex. avg", _BG_MISC))
         self._table.setItem(ex_row, 1, _ex_item("", _BG_MISC))
-        for ei in range(extra_count):
-            self._table.setItem(ex_row, 2 + ei, _ex_item("", _BG_MISC))
         # Total and Grade columns
         self._table.setItem(ex_row, sq_start + sq_count,   _ex_item("", _BG_MISC))
         self._table.setItem(ex_row, sq_start + sq_count + 1, _ex_item("", _BG_MISC))
+        for ei in range(extra_count):
+            self._table.setItem(ex_row, extra_start + ei, _ex_item("", _BG_MISC))
 
         # Group subquestion column offsets by exercise (same order as header row 0)
         ex_groups: Dict[str, List[int]] = {}
@@ -568,8 +576,7 @@ class GradingPanel(QWidget):
 
     def _update_row_totals(self, row: int, student: Student):
         sq_count = len(self._subquestions)
-        extra_count = len(self._extra_field_names()) if self._show_extra else 0
-        sq_start = 2 + extra_count
+        sq_start = 2
         sg = self._grades.get(student.student_number, {})
         total = sum(sg.get(sq.name, 0) for sq in self._subquestions)
         total_item = self._table.item(row, sq_start + sq_count)
@@ -591,8 +598,7 @@ class GradingPanel(QWidget):
         filtered = self._filtered_students()
         if data_row >= len(filtered):
             return
-        extra_count = len(self._extra_field_names()) if self._show_extra else 0
-        sq_start = 2 + extra_count
+        sq_start = 2
         sq_end = sq_start + len(self._subquestions)
         if col < sq_start or col >= sq_end:
             return
@@ -655,8 +661,7 @@ class GradingPanel(QWidget):
         if data_row >= len(filtered):
             return
         student = filtered[data_row]
-        extra_count = len(self._extra_field_names()) if self._show_extra else 0
-        sq_start = 2 + extra_count
+        sq_start = 2
         sq_end = sq_start + len(self._subquestions)
         if sq_start <= col < sq_end:
             sq = self._subquestions[col - sq_start]
@@ -670,6 +675,14 @@ class GradingPanel(QWidget):
     def eventFilter(self, obj, event):
         if obj is self._table.viewport() and event.type() == QEvent.Type.Resize:
             QTimer.singleShot(0, self._update_frozen_geometry)
+        # Forward wheel events from frozen overlays to the main table viewport
+        # so that scrolling over sticky headers/columns stays synchronised.
+        if event.type() == QEvent.Type.Wheel:
+            frozen_viewports = {fz.viewport() for fz in
+                                (self._fz_corner, self._fz_header, self._fz_left)}
+            if obj in frozen_viewports:
+                QApplication.sendEvent(self._table.viewport(), event)
+                return True
         return super().eventFilter(obj, event)
 
     def _on_frozen_section_resized(self, idx, _old, new):
@@ -735,9 +748,8 @@ class GradingPanel(QWidget):
     def _set_frozen_spans(self):
         """Duplicate relevant cell spans on the frozen overlays."""
         cc = self._table.columnCount()
-        extra_count = len(self._extra_field_names()) if self._show_extra else 0
         sq_count = len(self._subquestions)
-        sq_start = _FROZEN_COLS + extra_count
+        sq_start = _FROZEN_COLS
 
         # Corner: Student and Number each span all 3 header rows
         self._fz_corner.clearSpans()
@@ -746,7 +758,7 @@ class GradingPanel(QWidget):
 
         # Header: replicate the same spans as the main table for header rows
         self._fz_header.clearSpans()
-        # Fixed columns that span 3 header rows (extra fields, Total, Grade)
+        # Fixed columns that span 3 header rows (Total, Grade, extras)
         for c in range(_FROZEN_COLS, cc):
             if c < sq_start or c >= sq_start + sq_count:
                 self._fz_header.setSpan(0, c, _HEADER_ROWS, 1)
