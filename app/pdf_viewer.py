@@ -949,15 +949,30 @@ class PDFViewerPanel(QWidget):
             preset_list.addItem(QListWidgetItem(text))
         playout.addWidget(preset_list)
 
+        def _first_visible_item():
+            for i in range(preset_list.count()):
+                item = preset_list.item(i)
+                if not item.isHidden():
+                    return item
+            return None
+
         def _filter_presets(query: str):
             q = query.strip().lower()
             for i in range(preset_list.count()):
                 item = preset_list.item(i)
                 item.setHidden(q != "" and q not in item.text().lower())
+            # Keep the first visible item selected so Enter always picks something
+            first = _first_visible_item()
+            if first:
+                preset_list.setCurrentItem(first)
+            else:
+                preset_list.clearSelection()
 
         filter_edit.textChanged.connect(_filter_presets)
 
         def _on_pick(item: QListWidgetItem):
+            if item is None or item.isHidden():
+                return
             text = item.text()
             self._close_stamp_popup()
             self._annotations.append(Annotation(
@@ -969,6 +984,56 @@ class PDFViewerPanel(QWidget):
             self.deselect_tool()
 
         preset_list.itemClicked.connect(_on_pick)
+        preset_list.itemActivated.connect(_on_pick)
+
+        _filter_orig_kp = filter_edit.keyPressEvent
+        _list_orig_kp   = preset_list.keyPressEvent
+
+        def _filter_key_press(event):
+            key = event.key()
+            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                # Pick the first visible / currently selected item
+                item = preset_list.currentItem() or _first_visible_item()
+                if item and not item.isHidden():
+                    _on_pick(item)
+                return
+            if key == Qt.Key.Key_Down:
+                # Move selection focus to the list
+                first = _first_visible_item()
+                if first:
+                    preset_list.setCurrentItem(first)
+                    preset_list.setFocus()
+                return
+            if key == Qt.Key.Key_Escape:
+                self._close_stamp_popup()
+                return
+            _filter_orig_kp(event)
+
+        filter_edit.keyPressEvent = _filter_key_press
+
+        def _list_key_press(event):
+            key = event.key()
+            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                item = preset_list.currentItem()
+                if item and not item.isHidden():
+                    _on_pick(item)
+                return
+            if key == Qt.Key.Key_Up:
+                # Return focus to filter when Up is pressed on the first visible item
+                if preset_list.currentItem() is _first_visible_item():
+                    filter_edit.setFocus()
+                    return
+            if key == Qt.Key.Key_Escape:
+                self._close_stamp_popup()
+                return
+            _list_orig_kp(event)
+
+        preset_list.keyPressEvent = _list_key_press
+
+        # Select the first item by default so Enter works immediately
+        first = _first_visible_item()
+        if first:
+            preset_list.setCurrentItem(first)
 
         edit_btn = QPushButton("Edit Presets…")
         edit_btn.setStyleSheet("QPushButton { border: 1px solid #ccc; padding: 3px; }")
