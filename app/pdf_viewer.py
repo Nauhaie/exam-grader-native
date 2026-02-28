@@ -51,6 +51,14 @@ _INLINE_EDITOR_MIN_W  = 120
 _INLINE_EDITOR_WIDTH  = 200
 
 
+def _pm_logical_size(pm: Optional[QPixmap]) -> Tuple[int, int]:
+    """Return *(width, height)* of *pm* in device-independent (logical) pixels."""
+    if pm and not pm.isNull():
+        dpr = pm.devicePixelRatio()
+        return int(pm.width() / dpr), int(pm.height() / dpr)
+    return 1, 1
+
+
 @dataclass
 class _DragState:
     kind: str        # 'point'|'line-start'|'line-end'|'line-move'|
@@ -478,11 +486,9 @@ class PDFViewerPanel(QWidget):
     # ── Rendering ─────────────────────────────────────────────────────────────
 
     def _page_size(self) -> Tuple[int, int]:
-        """Return *(width, height)* of the current page pixmap, or (1, 1)."""
+        """Return *(width, height)* of the current page pixmap in logical pixels."""
         pm = self._page_label.pixmap()
-        if pm and not pm.isNull():
-            return pm.width(), pm.height()
-        return 1, 1
+        return _pm_logical_size(pm)
 
     def _show_placeholder(self):
         self._raw_pixmap = None
@@ -547,7 +553,10 @@ class PDFViewerPanel(QWidget):
         else:
             display = self._base_pixmap
         self._page_label.setPixmap(display)
-        self._page_label.resize(display.size())
+        dpr = display.devicePixelRatio()
+        self._page_label.resize(
+            int(display.width() / dpr), int(display.height() / dpr)
+        )
 
     # ── Mouse handlers ────────────────────────────────────────────────────────
 
@@ -628,9 +637,7 @@ class PDFViewerPanel(QWidget):
             return
 
         if self._active_tool == TOOL_ERASER:
-            pm = self._page_label.pixmap()
-            w = pm.width() if pm else 1
-            h = pm.height() if pm else 1
+            w, h = self._page_size()
             idx = annotation_overlay.find_annotation_at(
                 self._annotations, self._current_page, fx, fy, w, h
             )
@@ -640,9 +647,7 @@ class PDFViewerPanel(QWidget):
                 self.annotations_changed.emit()
 
         elif self._active_tool == TOOL_TEXT:
-            pm = self._page_label.pixmap()
-            w = pm.width() if pm else 1
-            h = pm.height() if pm else 1
+            w, h = self._page_size()
             idx = self._find_text_at(fx, fy, w, h)
             if idx >= 0:
                 self._start_text_edit(
@@ -702,7 +707,8 @@ class PDFViewerPanel(QWidget):
         pm = self._page_label.pixmap()
         if not pm or pm.isNull():
             return
-        idx = self._find_text_at(fx, fy, pm.width(), pm.height())
+        w, h = _pm_logical_size(pm)
+        idx = self._find_text_at(fx, fy, w, h)
         if idx >= 0:
             ann = self._annotations[idx]
             self._start_text_edit(ann.x, ann.y, edit_idx=idx)
@@ -764,7 +770,7 @@ class PDFViewerPanel(QWidget):
         pm = self._page_label.pixmap()
         if not pm or pm.isNull():
             return None
-        w, h = pm.width(), pm.height()
+        w, h = _pm_logical_size(pm)
         tol = _DRAG_TOL
         mx, my = fx * w, fy * h
 
@@ -857,11 +863,12 @@ class PDFViewerPanel(QWidget):
             return
 
         # Scale font to match the rendered annotation size
-        s = pm.height() / annotation_overlay.BASE_PAGE_HEIGHT
+        lw, lh = _pm_logical_size(pm)
+        s = lh / annotation_overlay.BASE_PAGE_HEIGHT
         font_pt = max(4, round(annotation_overlay._TEXT_FONT_PT * s))
 
-        cx = int(fx * pm.width())
-        cy = int(fy * pm.height())
+        cx = int(fx * lw)
+        cy = int(fy * lh)
         vp = self._scroll.viewport()
         pos = self._page_label.mapTo(vp, QPoint(cx, cy))
 
@@ -870,7 +877,7 @@ class PDFViewerPanel(QWidget):
         editor.move(pos)
         if edit_idx >= 0:
             ann = self._annotations[edit_idx]
-            rect = annotation_overlay.get_text_box_rect(ann, pm.width(), pm.height())
+            rect = annotation_overlay.get_text_box_rect(ann, lw, lh)
             # Set width first so word-wrap height calculation is correct when
             # setPlainText triggers _adjust_height.
             init_w = max(rect.width(), _INLINE_EDITOR_MIN_W) if rect else _INLINE_EDITOR_WIDTH
@@ -891,7 +898,7 @@ class PDFViewerPanel(QWidget):
             if text.strip():
                 # Only record width as a fraction of the page; height is always
                 # computed automatically from the text content.
-                width_frac = editor.width() / pm.width() if pm.width() > 0 else None
+                width_frac = editor.width() / lw if lw > 0 else None
                 if edit_idx >= 0:
                     self._annotations[edit_idx].text = text.strip()
                     self._annotations[edit_idx].width = width_frac
@@ -928,8 +935,9 @@ class PDFViewerPanel(QWidget):
             return
 
         vp = self._scroll.viewport()
-        cx = int(fx * pm.width())
-        cy = int(fy * pm.height())
+        lw, lh = _pm_logical_size(pm)
+        cx = int(fx * lw)
+        cy = int(fy * lh)
         pos = self._page_label.mapTo(vp, QPoint(cx, cy))
 
         popup = QWidget(vp)

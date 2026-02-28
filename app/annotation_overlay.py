@@ -40,7 +40,11 @@ def draw_annotations(pixmap: QPixmap, annotations: List[Annotation], page: int) 
     result = pixmap.copy()
     painter = QPainter(result)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    w, h = result.width(), result.height()
+    # QPainter on a HiDPI QPixmap operates in device-independent (logical)
+    # coordinates, so we must use the logical dimensions here.
+    dpr = result.devicePixelRatio()
+    w = result.width() / dpr
+    h = result.height() / dpr
     for ann in annotations:
         if ann.page != page:
             continue
@@ -58,7 +62,9 @@ def draw_preview(
     """Draw a dashed ghost shape on *pixmap* **in place** (modifies the pixmap)."""
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    w, h = pixmap.width(), pixmap.height()
+    dpr = pixmap.devicePixelRatio()
+    w = pixmap.width() / dpr
+    h = pixmap.height() / dpr
     s = h / BASE_PAGE_HEIGHT
     x1, y1 = int(start[0] * w), int(start[1] * h)
     x2, y2 = int(end[0] * w), int(end[1] * h)
