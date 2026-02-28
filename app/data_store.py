@@ -148,6 +148,7 @@ def load_grading_settings_from_config(config_data: dict) -> GradingSettings:
         score_total=float(raw_st) if raw_st is not None else None,
         debug_mode=bool(gs.get("debug_mode", False)),
         cover_page_detail=bool(gs.get("cover_page_detail", False)),
+        hi_dpr=bool(gs.get("hi_dpr", True)),
     )
     set_debug(settings.debug_mode)
     dbg(f"Grading settings loaded: max_note={settings.max_note}, "
@@ -164,6 +165,7 @@ def save_grading_settings_to_config(config_data: dict, settings: GradingSettings
         "score_total": settings.score_total,
         "debug_mode": settings.debug_mode,
         "cover_page_detail": settings.cover_page_detail,
+        "hi_dpr": settings.hi_dpr,
     }
 
 

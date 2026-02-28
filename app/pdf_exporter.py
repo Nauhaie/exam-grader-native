@@ -69,26 +69,21 @@ def _insert_cover_page(
     margin = pw * 0.08
     cx = pw / 2              # horizontal centre
     y = margin               # running y position
-    fs_title = min(pw, ph) * 0.035     # ~24 pt on A4
-    fs_mark = min(pw, ph) * 0.06       # ~50 pt on A4
+    fs_title = min(pw, ph) * 0.028     # slightly smaller for name+ID line
+    fs_mark = min(pw, ph) * 0.04       # smaller grade
     fs_body = min(pw, ph) * 0.018      # ~15 pt on A4
-    fs_small = min(pw, ph) * 0.014     # ~12 pt on A4
+    fs_small = min(pw, ph) * 0.012     # ~10 pt on A4
     line_gap = fs_body * 1.6
 
-    # ── Student name ──────────────────────────────────────────────────────
-    name_text = f"{student.first_name} {student.last_name}"
+    # ── Student name + ID (same line) ────────────────────────────────────
+    name_text = f"{student.first_name} {student.last_name}  —  ID: {student.student_number}"
     _centered_text(page, name_text, cx, y, pw - 2 * margin, fs_title, bold=True)
-    y += fs_title * 1.5
-
-    # ── Student ID ────────────────────────────────────────────────────────
-    _centered_text(page, f"ID: {student.student_number}", cx, y, pw - 2 * margin,
-                   fs_body, color=_GREY)
-    y += fs_body * 2.5
+    y += fs_title * 2.0
 
     # ── Mark ──────────────────────────────────────────────────────────────
     mark_str = f"{mark:g}/{settings.max_note:g}"
     _centered_text(page, mark_str, cx, y, pw - 2 * margin, fs_mark, bold=True)
-    y += fs_mark * 1.8
+    y += fs_mark * 1.6
 
     # ── Total points ──────────────────────────────────────────────────────
     _centered_text(page, f"Total: {points_total:g}/{score_total:g} pts",
@@ -109,17 +104,18 @@ def _insert_cover_page(
         ex_max = sum(sq.max_points for sq in ex.subquestions)
         ex_pts = sum(student_scores.get(sq.name, 0) or 0 for sq in ex.subquestions)
 
-        # Exercise header line
-        ex_label = f"{ex.name}:  {ex_pts:g}/{ex_max:g}"
-        _left_text(page, ex_label, col_name_x, y, usable_w, fs_body, bold=True)
+        if settings.cover_page_detail and ex.subquestions:
+            # Compact: exercise name, total, then all subquestion scores on one line
+            parts = [f"{sq.name}: {(student_scores.get(sq.name, 0) or 0):g}/{sq.max_points:g}"
+                     for sq in ex.subquestions]
+            detail_str = "  (" + ",  ".join(parts) + ")"
+            ex_label = f"{ex.name}:  {ex_pts:g}/{ex_max:g}{detail_str}"
+            _left_text(page, ex_label, col_name_x, y, usable_w, fs_small)
+        else:
+            # Exercise header line only
+            ex_label = f"{ex.name}:  {ex_pts:g}/{ex_max:g}"
+            _left_text(page, ex_label, col_name_x, y, usable_w, fs_body, bold=True)
         y += line_gap
-
-        if settings.cover_page_detail:
-            for sq in ex.subquestions:
-                sq_pts = student_scores.get(sq.name, 0) or 0
-                sq_label = f"  {sq.name}:  {sq_pts:g}/{sq.max_points:g}"
-                _left_text(page, sq_label, col_name_x, y, usable_w, fs_small)
-                y += fs_small * 1.5
 
         # Avoid running past the bottom of the page
         if y > ph - margin:
@@ -274,27 +270,7 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                             return mw - vy, vx
                         return vx, vy   # rot == 0
 
-                    # ── "MARKED" watermark at top-left of every page ──────────────
-                    # Skip the watermark on the cover page (page 0 when a cover
-                    # was inserted) since it already has its own content.
-                    if not (cover_inserted and page_idx == 0):
-                        # insert_textbox rotate= must equal the page rotation so that the
-                        # text baseline goes left-to-right in the viewer (rot=0 → 0,
-                        # rot=90 → 90, etc.).  Using (360-rot) produced upside-down text
-                        # on landscape pages because it reversed the character direction.
-                        marked_fontsize = 8
-                        marked_rect = _text_rect(4, 4, 50, 16, rot, mw, mh)
-                        marked_rotate = rot
-                        overflow = page.insert_textbox(
-                            marked_rect, "MARKED",
-                            fontsize=marked_fontsize, fontname="helv",
-                            color=(0.8, 0.0, 0.0), align=0, rotate=marked_rotate,
-                        )
-                        _log(
-                            f"  MARKED stamp   : insert_textbox rect={marked_rect}"
-                            f" rotate={marked_rotate} overflow={overflow:.2f}"
-                        )
-
+                    # ── Annotations ─────────────────────────────────────────
                     page_anns = [a for a in annotations if a.page == page_idx]
                     _log(f"  annotations    : {len(page_anns)}")
 

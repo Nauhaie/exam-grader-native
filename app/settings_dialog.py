@@ -231,6 +231,22 @@ class SettingsDialog(QDialog):
         debug_hint.setContentsMargins(20, 2, 0, 0)
         layout.addWidget(debug_hint)
 
+        layout.addSpacing(12)
+
+        self._hi_dpr_cb = QCheckBox("Enable high-DPI (Retina) rendering")
+        self._hi_dpr_cb.setChecked(settings.hi_dpr)
+        layout.addWidget(self._hi_dpr_cb)
+
+        hi_dpr_hint = QLabel(
+            "When enabled, PDF pages are rendered at the native screen resolution "
+            "for crisp text on Retina / HiDPI displays. Disable this option if "
+            "page rendering feels too slow on your machine."
+        )
+        hi_dpr_hint.setWordWrap(True)
+        hi_dpr_hint.setStyleSheet("color: #555;")
+        hi_dpr_hint.setContentsMargins(20, 2, 0, 0)
+        layout.addWidget(hi_dpr_hint)
+
         layout.addStretch()
         return w
 
@@ -524,6 +540,7 @@ class SettingsDialog(QDialog):
             ),
             debug_mode=self._debug_cb.isChecked(),
             cover_page_detail=self._cover_detail_cb.isChecked(),
+            hi_dpr=self._hi_dpr_cb.isChecked(),
         )
 
     def get_export_template(self) -> str:
