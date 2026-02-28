@@ -121,6 +121,7 @@ class MainWindow(QMainWindow):
         data_store.ensure_data_dirs()
         self._grading_panel.set_session(self._students, self._grading_scheme, self._grades)
         self._grading_panel.set_grading_settings(self._grading_settings)
+        self._pdf_viewer.set_hi_dpr(self._grading_settings.hi_dpr)
         self._pdf_viewer.set_preset_annotations(self._preset_annotations)
         data_store.dbg(f"Project applied successfully: {len(self._students)} student(s)")
         if self._students:
@@ -150,6 +151,7 @@ class MainWindow(QMainWindow):
             self._grading_scheme = new_scheme
             self._preset_annotations = dlg.get_preset_annotations()
             self._grading_panel.set_grading_settings(self._grading_settings)
+            self._pdf_viewer.set_hi_dpr(self._grading_settings.hi_dpr)
             self._grading_panel.set_session(
                 self._students, self._grading_scheme, self._grades
             )

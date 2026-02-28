@@ -34,6 +34,7 @@ class GradingSettings:
     score_total: Optional[float] = None  # denominator; None = sum of all exam points
     debug_mode: bool = False        # print debug messages and write .log files
     cover_page_detail: bool = False # cover page: True = show subquestion detail, False = per-exercise only
+    hi_dpr: bool = True             # use high DPI rendering (Retina); disable for speed
 
 
 @dataclass

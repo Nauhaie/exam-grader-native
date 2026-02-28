@@ -1,4 +1,20 @@
-"""Center panel: PDF viewer with annotation support."""
+"""Center panel: PDF viewer with annotation support.
+
+PDF rendering backend
+---------------------
+Currently uses **PyMuPDF (fitz)**, which wraps the MuPDF C library.
+MuPDF is the standard high-quality renderer used with Qt-based apps.
+
+Potential faster alternatives (for future evaluation):
+ * **QPdfDocument** (built into Qt 6.4+) — zero-dependency, threaded tile
+   rendering via ``QPdfDocument.render()``.  No extra install, but lacks
+   some MuPDF features (annotations, text extraction).
+ * **Poppler (python-poppler-qt6)** — wraps the Poppler C++ library used by
+   Evince/Okular.  Comparable quality to MuPDF; may be faster for certain
+   page layouts.
+ * **pdfium (pypdfium2)** — wraps Google's PDFium (used in Chrome).  Very
+   fast rasterisation, especially on large or complex pages.
+"""
 import math
 import os
 from dataclasses import dataclass
@@ -330,6 +346,11 @@ class PDFViewerPanel(QWidget):
         self._pan_vval: int = 0
         self._preset_annotations: List[str] = []
         self._stamp_popup: Optional[QWidget] = None
+        self._hi_dpr: bool = True
+        # Pre-render cache: { page_index: QPixmap }
+        self._page_cache: Dict[int, QPixmap] = {}
+        self._cache_zoom: float = 0.0  # zoom level the cache was built at
+        self._cache_dpr: float = 0.0   # dpr the cache was built at
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -438,6 +459,7 @@ class PDFViewerPanel(QWidget):
         self._drag = None
         self._cancel_inline_editor()
         self._close_stamp_popup()
+        self._invalidate_cache()
         if pdf_path and os.path.isfile(pdf_path):
             self._pdf_path = pdf_path
             self._doc = fitz.open(pdf_path)
@@ -475,6 +497,14 @@ class PDFViewerPanel(QWidget):
         """Update the list of preset texts available to the Stamp tool."""
         self._preset_annotations = list(presets)
 
+    def set_hi_dpr(self, enabled: bool):
+        """Enable or disable high-DPI rendering.  Re-renders the page if changed."""
+        if enabled != self._hi_dpr:
+            self._hi_dpr = enabled
+            self._invalidate_cache()
+            if self._doc:
+                self._render_page()
+
     def prev_page(self):
         """Navigate to the previous page (public, also used by shortcuts)."""
         self._prev_page()
@@ -510,24 +540,56 @@ class PDFViewerPanel(QWidget):
         self._prev_btn.setEnabled(self._current_page > 0)
         self._next_btn.setEnabled(self._current_page < n - 1)
 
-        page = self._doc[self._current_page]
-        # Scale by the device pixel ratio so Retina/HiDPI screens get a
-        # sharp raster instead of an upscaled blurry image.
-        dpr = self.devicePixelRatio()
-        data_store.dbg(f"Rendering page {self._current_page + 1}/{n} at zoom {self._zoom:.2f} "
-                       f"dpr {dpr:.1f} "
+        dpr = self.devicePixelRatio() if self._hi_dpr else 1.0
+
+        # Use cache if available for the current page at the right zoom/dpr
+        if (self._current_page in self._page_cache
+                and self._cache_zoom == self._zoom
+                and self._cache_dpr == dpr):
+            raw = self._page_cache[self._current_page]
+        else:
+            raw = self._render_page_pixmap(self._current_page, dpr)
+            self._page_cache[self._current_page] = raw
+            self._cache_zoom = self._zoom
+            self._cache_dpr = dpr
+
+        self._raw_pixmap = raw
+        self._zoom_label.setText(f"{int(self._zoom * 100)}%")
+        self._rebuild_base_and_display()
+
+        # Kick off pre-rendering of adjacent pages after the current one is shown
+        QTimer.singleShot(0, self._prerender_adjacent)
+
+    def _render_page_pixmap(self, page_idx: int, dpr: float) -> QPixmap:
+        """Rasterise a single page and return a QPixmap with the given DPR."""
+        page = self._doc[page_idx]
+        data_store.dbg(f"Rendering page {page_idx + 1}/{self._doc.page_count} "
+                       f"at zoom {self._zoom:.2f} dpr {dpr:.1f} "
                        f"(page size: {page.rect.width:.0f}×{page.rect.height:.0f} pt)")
-        # page.rect is already rotation-aware in PyMuPDF, so landscape A3 pages
-        # get their correct (wide) dimensions here automatically.
         mat = fitz.Matrix(self._zoom * dpr, self._zoom * dpr)
         pix = page.get_pixmap(matrix=mat, alpha=False)
         img = QImage(pix.samples, pix.width, pix.height,
                      pix.stride, QImage.Format.Format_RGB888)
         raw = QPixmap.fromImage(img)
         raw.setDevicePixelRatio(dpr)
-        self._raw_pixmap = raw
-        self._zoom_label.setText(f"{int(self._zoom * 100)}%")
-        self._rebuild_base_and_display()
+        return raw
+
+    def _invalidate_cache(self):
+        """Clear the pre-render cache (e.g. after zoom or DPR change)."""
+        self._page_cache.clear()
+
+    def _prerender_adjacent(self):
+        """Pre-render the next and previous pages into the cache."""
+        if not self._doc:
+            return
+        dpr = self.devicePixelRatio() if self._hi_dpr else 1.0
+        if self._cache_zoom != self._zoom or self._cache_dpr != dpr:
+            self._invalidate_cache()
+            self._cache_zoom = self._zoom
+            self._cache_dpr = dpr
+        for idx in (self._current_page - 1, self._current_page + 1):
+            if 0 <= idx < self._doc.page_count and idx not in self._page_cache:
+                self._page_cache[idx] = self._render_page_pixmap(idx, dpr)
 
     def _rebuild_base_and_display(self):
         """Redraw all annotations onto the cached raw page, refresh display."""
@@ -1126,16 +1188,19 @@ class PDFViewerPanel(QWidget):
         new_zoom = max(0.5, min(3.0, self._zoom * factor))
         if abs(new_zoom - self._zoom) > 0.005:
             self._zoom = new_zoom
+            self._invalidate_cache()
             self._render_page()
 
     def _zoom_in(self):
         if self._zoom < 3.0:
             self._zoom = min(3.0, self._zoom + 0.2)
+            self._invalidate_cache()
             self._render_page()
 
     def _zoom_out(self):
         if self._zoom > 0.5:
             self._zoom = max(0.5, self._zoom - 0.2)
+            self._invalidate_cache()
             self._render_page()
 
     def keyPressEvent(self, event):
