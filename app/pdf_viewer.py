@@ -280,6 +280,7 @@ class ClickableLabel(QLabel):
     moved         = Signal(float, float)
     released      = Signal(float, float)
     double_clicked = Signal(float, float)
+    left          = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -316,6 +317,10 @@ class ClickableLabel(QLabel):
             fx, fy = self._frac(event)
             self.double_clicked.emit(fx, fy)
         super().mouseDoubleClickEvent(event)
+
+    def leaveEvent(self, event):
+        self.left.emit()
+        super().leaveEvent(event)
 
 
 class PDFViewerPanel(QWidget):
@@ -435,6 +440,7 @@ class PDFViewerPanel(QWidget):
         self._page_label.moved.connect(self._on_page_moved)
         self._page_label.released.connect(self._on_page_released)
         self._page_label.double_clicked.connect(self._on_page_double_clicked)
+        self._page_label.left.connect(self._on_page_left)
         self._scroll.setWidget(self._page_label)
         layout.addWidget(self._scroll, stretch=1)
 
@@ -645,6 +651,25 @@ class PDFViewerPanel(QWidget):
 
     # ── Mouse handlers ────────────────────────────────────────────────────────
 
+    def _set_page_cursor(self, shape):
+        """Set the cursor on both the page label and the viewport.
+
+        Setting on both widgets ensures the cursor persists even when Qt's
+        internal event processing (e.g. in QScrollArea / QLabel) resets the
+        child widget's cursor — the viewport cursor acts as a fallback.
+        """
+        self._page_label.setCursor(shape)
+        self._scroll.viewport().setCursor(shape)
+
+    def _unset_page_cursor(self):
+        """Restore the default cursor on both the page label and the viewport."""
+        self._page_label.unsetCursor()
+        self._scroll.viewport().unsetCursor()
+
+    def _on_page_left(self):
+        """Mouse left the page label area — restore default cursor."""
+        self._unset_page_cursor()
+
     def _on_page_pressed(self, fx: float, fy: float):
         self._drag_moved = False
         # Cmd/Ctrl + left-click → start panning
@@ -654,7 +679,7 @@ class PDFViewerPanel(QWidget):
             self._pan_origin = (cur.x(), cur.y())
             self._pan_hval = self._scroll.horizontalScrollBar().value()
             self._pan_vval = self._scroll.verticalScrollBar().value()
-            self._page_label.setCursor(Qt.CursorShape.ClosedHandCursor)
+            self._set_page_cursor(Qt.CursorShape.ClosedHandCursor)
             return
         if self._active_tool in (TOOL_NONE, None):
             drag = self._find_drag_target(fx, fy)
@@ -675,38 +700,38 @@ class PDFViewerPanel(QWidget):
             return
         # Hover / drag cursor hints
         if QApplication.queryKeyboardModifiers() & _PAN_MOD:
-            self._page_label.setCursor(Qt.CursorShape.OpenHandCursor)
+            self._set_page_cursor(Qt.CursorShape.OpenHandCursor)
         elif self._drag is not None:
             # Keep the appropriate cursor shape during an active drag
             d = self._drag
             if d.kind in ("circle-move", "line-move", "point", "rectcross-move"):
-                self._page_label.setCursor(Qt.CursorShape.ClosedHandCursor)
+                self._set_page_cursor(Qt.CursorShape.ClosedHandCursor)
             elif d.kind == "text-resize":
-                self._page_label.setCursor(Qt.CursorShape.SizeHorCursor)
+                self._set_page_cursor(Qt.CursorShape.SizeHorCursor)
             elif d.kind == "circle-edge":
-                self._page_label.setCursor(Qt.CursorShape.SizeVerCursor)
+                self._set_page_cursor(Qt.CursorShape.SizeVerCursor)
             elif d.kind in ("rectcross-tl", "rectcross-tr",
                              "rectcross-bl", "rectcross-br"):
-                self._page_label.setCursor(Qt.CursorShape.SizeAllCursor)
+                self._set_page_cursor(Qt.CursorShape.SizeAllCursor)
             elif d.kind in ("line-start", "line-end"):
-                self._page_label.setCursor(Qt.CursorShape.CrossCursor)
+                self._set_page_cursor(Qt.CursorShape.CrossCursor)
         elif self._active_tool in (TOOL_NONE, None):
             # Show grab cursor when hovering over a draggable annotation
             drag = self._find_drag_target(fx, fy)
             if drag is not None:
                 if drag.kind == "text-resize":
-                    self._page_label.setCursor(Qt.CursorShape.SizeHorCursor)
+                    self._set_page_cursor(Qt.CursorShape.SizeHorCursor)
                 elif drag.kind == "circle-edge":
-                    self._page_label.setCursor(Qt.CursorShape.SizeVerCursor)
+                    self._set_page_cursor(Qt.CursorShape.SizeVerCursor)
                 elif drag.kind in ("rectcross-tl", "rectcross-tr",
                                     "rectcross-bl", "rectcross-br"):
-                    self._page_label.setCursor(Qt.CursorShape.SizeAllCursor)
+                    self._set_page_cursor(Qt.CursorShape.SizeAllCursor)
                 else:
-                    self._page_label.setCursor(Qt.CursorShape.OpenHandCursor)
+                    self._set_page_cursor(Qt.CursorShape.OpenHandCursor)
             else:
-                self._page_label.unsetCursor()
+                self._unset_page_cursor()
         else:
-            self._page_label.unsetCursor()
+            self._unset_page_cursor()
         if self._drag is not None:
             self._drag_moved = True
             self._apply_drag(fx, fy)
@@ -720,7 +745,7 @@ class PDFViewerPanel(QWidget):
         # End pan
         if self._pan_origin is not None:
             self._pan_origin = None
-            self._page_label.unsetCursor()
+            self._unset_page_cursor()
             return
         if self._drag is not None:
             self._apply_drag(fx, fy)
