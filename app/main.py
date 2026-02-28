@@ -230,7 +230,12 @@ class MainWindow(QMainWindow):
             return
         path = os.path.join(data_store.EXPORT_DIR, "grades.csv")
         subquestions = [sq for ex in self._grading_scheme.exercises for sq in ex.subquestions]
-        fieldnames = ["student_number", "last_name", "first_name"] + [sq.name for sq in subquestions]
+        gs = self._grading_settings
+        scheme_total = self._grading_scheme.max_total()
+        score_total = gs.score_total if gs.score_total is not None else scheme_total
+        fieldnames = (["student_number", "last_name", "first_name"]
+                      + [sq.name for sq in subquestions]
+                      + ["total", "grade"])
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
@@ -243,6 +248,11 @@ class MainWindow(QMainWindow):
                 }
                 for sq in subquestions:
                     row[sq.name] = sg.get(sq.name, "")
+                pts = sum(sg.get(sq.name, 0) or 0 for sq in subquestions)
+                rounding = max(0.001, gs.rounding)
+                grade = round((pts / score_total) * gs.max_note / rounding) * rounding if score_total > 0 else 0.0
+                row["total"] = pts
+                row["grade"] = grade
                 writer.writerow(row)
         dlg = QMessageBox(QMessageBox.Icon.Information, "Export",
                           f"Grades exported to:\n{path}", parent=self)
@@ -258,15 +268,24 @@ class MainWindow(QMainWindow):
             return
         path = os.path.join(data_store.EXPORT_DIR, "grades.xlsx")
         subquestions = [sq for ex in self._grading_scheme.exercises for sq in ex.subquestions]
+        gs = self._grading_settings
+        scheme_total = self._grading_scheme.max_total()
+        score_total = gs.score_total if gs.score_total is not None else scheme_total
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Grades"
-        ws.append(["student_number", "last_name", "first_name"] + [sq.name for sq in subquestions])
+        ws.append(["student_number", "last_name", "first_name"]
+                  + [sq.name for sq in subquestions]
+                  + ["total", "grade"])
         for student in self._students:
             sg = self._grades.get(student.student_number, {})
+            pts = sum(sg.get(sq.name, 0) or 0 for sq in subquestions)
+            rounding = max(0.001, gs.rounding)
+            grade = round((pts / score_total) * gs.max_note / rounding) * rounding if score_total > 0 else 0.0
             ws.append(
                 [student.student_number, student.last_name, student.first_name]
                 + [sg.get(sq.name, "") for sq in subquestions]
+                + [pts, grade]
             )
         wb.save(path)
         dlg = QMessageBox(QMessageBox.Icon.Information, "Export",

@@ -99,7 +99,6 @@ def ensure_data_dirs():
     os.makedirs(ANNOTATIONS_DIR, exist_ok=True)
     os.makedirs(EXPORT_DIR, exist_ok=True)
     os.makedirs(ANNOTATED_EXPORT_DIR, exist_ok=True)
-    os.makedirs(ANNOTATED_LOGS_DIR, exist_ok=True)
     dbg(f"Ensured data dirs exist under {_active_project_dir}")
 
 
