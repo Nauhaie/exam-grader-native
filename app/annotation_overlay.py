@@ -35,7 +35,8 @@ BASE_PAGE_HEIGHT: float = 842.0
 
 # ── Public drawing helpers ────────────────────────────────────────────────────
 
-def draw_annotations(pixmap: QPixmap, annotations: List[Annotation], page: int) -> QPixmap:
+def draw_annotations(pixmap: QPixmap, annotations: List[Annotation], page: int,
+                     skip_index: int = -1) -> QPixmap:
     """Return a *copy* of *pixmap* with all annotations for *page* drawn on it."""
     result = pixmap.copy()
     painter = QPainter(result)
@@ -45,8 +46,10 @@ def draw_annotations(pixmap: QPixmap, annotations: List[Annotation], page: int) 
     dpr = result.devicePixelRatio()
     w = result.width() / dpr
     h = result.height() / dpr
-    for ann in annotations:
+    for i, ann in enumerate(annotations):
         if ann.page != page:
+            continue
+        if i == skip_index:
             continue
         _draw_one(painter, ann, int(ann.x * w), int(ann.y * h), w, h)
     painter.end()

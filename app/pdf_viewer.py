@@ -303,7 +303,7 @@ class ClickableLabel(QLabel):
     def mouseMoveEvent(self, event):
         fx, fy = self._frac(event)
         self.moved.emit(fx, fy)
-        super().mouseMoveEvent(event)
+        event.accept()
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -336,6 +336,7 @@ class PDFViewerPanel(QWidget):
         self._line_start: Optional[Tuple[float, float]] = None
         self._preview_pos: Optional[Tuple[float, float]] = None
         self._inline_editor: Optional[InlineTextEdit] = None
+        self._editing_ann_idx: int = -1   # annotation index hidden during edit
         self._raw_pixmap: Optional[QPixmap] = None   # PDF page, no annotations
         self._base_pixmap: Optional[QPixmap] = None  # PDF page + baked annotations
         self._drag: Optional[_DragState] = None
@@ -617,7 +618,8 @@ class PDFViewerPanel(QWidget):
         if self._raw_pixmap is None:
             return
         self._base_pixmap = annotation_overlay.draw_annotations(
-            self._raw_pixmap, self._annotations, self._current_page
+            self._raw_pixmap, self._annotations, self._current_page,
+            skip_index=self._editing_ann_idx,
         )
         self._update_display()
 
@@ -959,6 +961,12 @@ class PDFViewerPanel(QWidget):
         if not pm or pm.isNull():
             return
 
+        # Hide the annotation being edited so the old text doesn't show
+        # behind the inline editor.
+        self._editing_ann_idx = edit_idx
+        if edit_idx >= 0:
+            self._rebuild_base_and_display()
+
         # Scale font to match the rendered annotation size
         lw, lh = _pm_logical_size(pm)
         s = lh / annotation_overlay.BASE_PAGE_HEIGHT
@@ -991,6 +999,7 @@ class PDFViewerPanel(QWidget):
 
         def _commit(text: str):
             self._inline_editor = None
+            self._editing_ann_idx = -1
             editor.deleteLater()
             if text.strip():
                 # Only record width as a fraction of the page; height is always
@@ -1007,11 +1016,15 @@ class PDFViewerPanel(QWidget):
                     ))
                 self._rebuild_base_and_display()
                 self.annotations_changed.emit()
+            else:
+                self._rebuild_base_and_display()
             self.deselect_tool()
 
         def _cancel():
             self._inline_editor = None
+            self._editing_ann_idx = -1
             editor.deleteLater()
+            self._rebuild_base_and_display()
 
         editor.committed.connect(_commit)
         editor.cancelled.connect(_cancel)
@@ -1020,6 +1033,9 @@ class PDFViewerPanel(QWidget):
         if self._inline_editor is not None:
             self._inline_editor.deleteLater()
             self._inline_editor = None
+            if self._editing_ann_idx >= 0:
+                self._editing_ann_idx = -1
+                self._rebuild_base_and_display()
 
     # ── Stamp popup (preset text annotation picker) ──────────────────────────
 
