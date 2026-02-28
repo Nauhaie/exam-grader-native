@@ -334,7 +334,7 @@ class MainWindow(QMainWindow):
                 break
             progress_bar.setValue(i)
             status_label.setText(
-                f"Exporting annotated PDFs… ({i}/{len(self._students)})"
+                f"Exporting annotated PDFs… ({i + 1}/{len(self._students)})"
             )
             QApplication.processEvents()
             src = os.path.join(self._exams_dir, f"{student.student_number}.pdf")
