@@ -22,7 +22,7 @@ from typing import Dict, List, Optional, Tuple
 
 import fitz  # pymupdf
 from PySide6.QtCore import QObject, QEvent, QPoint, QRect, Qt, QTimer, Signal
-from PySide6.QtGui import QCursor, QFont, QImage, QPixmap
+from PySide6.QtGui import QColor, QCursor, QFont, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QPlainTextEdit, QPushButton, QScrollArea,
@@ -681,6 +681,24 @@ class PDFViewerPanel(QWidget):
         """Restore the default cursor on the page label."""
         self._page_label.unsetCursor()
 
+    def _eraser_cursor(self) -> QCursor:
+        """Return a cached custom eraser cursor (small outlined rectangle)."""
+        if not hasattr(self, "_cached_eraser_cursor"):
+            size = 20
+            pix = QPixmap(size, size)
+            pix.fill(Qt.GlobalColor.transparent)
+            p = QPainter(pix)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            color = QColor(200, 60, 60)
+            p.setPen(QPen(color, 2))
+            # Body: slightly taller rectangle to mimic an eraser shape
+            p.drawRect(2, 4, size - 4, size - 6)
+            # Tip: filled band at the top edge of the body
+            p.fillRect(3, 5, size - 5, 3, color)
+            p.end()
+            self._cached_eraser_cursor = QCursor(pix, size // 2, size // 2)
+        return self._cached_eraser_cursor
+
     def _on_page_left(self):
         """Mouse left the page label area — restore default cursor."""
         self._unset_page_cursor()
@@ -745,6 +763,16 @@ class PDFViewerPanel(QWidget):
                     self._set_page_cursor(Qt.CursorShape.OpenHandCursor)
             else:
                 self._unset_page_cursor()
+        elif self._active_tool == TOOL_ERASER:
+            # Show eraser cursor when hovering over an erasable annotation
+            w, h = self._page_size()
+            idx = annotation_overlay.find_annotation_at(
+                self._annotations, self._current_page, fx, fy, w, h
+            )
+            if idx >= 0:
+                self._set_page_cursor(self._eraser_cursor())
+            else:
+                self._unset_page_cursor()
         else:
             self._unset_page_cursor()
         if self._drag is not None:
@@ -784,6 +812,7 @@ class PDFViewerPanel(QWidget):
                 self._annotations.pop(idx)
                 self._rebuild_base_and_display()
                 self.annotations_changed.emit()
+                self.deselect_tool()
 
         elif self._active_tool == TOOL_TEXT:
             w, h = self._page_size()
