@@ -8,8 +8,9 @@ import fitz  # pymupdf
 from PySide6.QtCore import QObject, QEvent, QPoint, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QCursor, QFont, QImage, QPixmap
 from PySide6.QtWidgets import (
-    QApplication, QHBoxLayout, QLabel, QLineEdit,
-    QPlainTextEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget,
+    QApplication, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QListWidgetItem, QPlainTextEdit, QPushButton, QScrollArea,
+    QVBoxLayout, QWidget,
 )
 
 import annotation_overlay
@@ -885,8 +886,6 @@ class PDFViewerPanel(QWidget):
         playout = QVBoxLayout(popup)
         playout.setContentsMargins(4, 4, 4, 4)
         playout.setSpacing(2)
-
-        from PySide6.QtWidgets import QListWidget, QListWidgetItem
 
         filter_edit = QLineEdit()
         filter_edit.setPlaceholderText("Filter presets…")
