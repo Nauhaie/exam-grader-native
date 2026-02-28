@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 import annotation_overlay
+import data_store
 from models import Annotation
 
 TOOL_NONE      = None
@@ -94,14 +95,16 @@ class InlineTextEdit(QPlainTextEdit):
         """Resize widget height to match document content (no scrollbars).
 
         Uses QFontMetrics.boundingRect with word-wrap to compute the exact
-        height needed, which is reliable even before the widget is shown
-        (unlike QPlainTextDocumentLayout.documentSize which can undercount).
+        height needed, accounting for document margins so that wrapping aligns
+        with the actual QPlainTextEdit layout.
         """
         text = self.toPlainText() or ""
         margins = self.contentsMargins()
         frame = self.frameWidth() * 2
-        extra_h = frame + margins.top() + margins.bottom()
-        inner_w = max(1, self.width() - frame - margins.left() - margins.right())
+        doc_margin = int(self.document().documentMargin())
+        extra_h = frame + margins.top() + margins.bottom() + 2 * doc_margin
+        inner_w = max(1, self.width() - frame - margins.left() - margins.right()
+                       - 2 * doc_margin)
 
         fm = self.fontMetrics()
         if text:
@@ -117,6 +120,7 @@ class InlineTextEdit(QPlainTextEdit):
         new_h = max(fm.height() + extra_h, doc_h + extra_h)
         if self.height() != new_h:
             self.resize(self.width(), new_h)
+            self.ensureCursorVisible()
 
     def resizeEvent(self, event):
         """Re-check height when the width changes (word-wrap reflow)."""
@@ -418,9 +422,11 @@ class PDFViewerPanel(QWidget):
         if pdf_path and os.path.isfile(pdf_path):
             self._pdf_path = pdf_path
             self._doc = fitz.open(pdf_path)
+            data_store.dbg(f"PDF loaded: {pdf_path} ({self._doc.page_count} page(s))")
             self._render_page()
         else:
             self._pdf_path = None
+            data_store.dbg(f"PDF not found or no path given: {pdf_path}")
             self._show_placeholder()
 
     def set_annotations(self, annotations: List[Annotation]):
@@ -434,6 +440,7 @@ class PDFViewerPanel(QWidget):
         if tool != self._active_tool:
             self._line_start = None
             self._preview_pos = None
+            data_store.dbg(f"Tool changed: {self._active_tool!r} → {tool!r}")
         self._active_tool = tool
         for t, btn in self._tool_buttons.items():
             btn.setChecked(t == tool)
@@ -482,6 +489,8 @@ class PDFViewerPanel(QWidget):
         self._next_btn.setEnabled(self._current_page < n - 1)
 
         page = self._doc[self._current_page]
+        data_store.dbg(f"Rendering page {self._current_page + 1}/{n} at zoom {self._zoom:.2f} "
+                       f"(page size: {page.rect.width:.0f}×{page.rect.height:.0f} pt)")
         # page.rect is already rotation-aware in PyMuPDF, so landscape A3 pages
         # get their correct (wide) dimensions here automatically.
         mat = fitz.Matrix(self._zoom, self._zoom)
@@ -845,6 +854,7 @@ class PDFViewerPanel(QWidget):
     def _prev_page(self):
         if self._doc and self._current_page > 0:
             self._current_page -= 1
+            data_store.dbg(f"Navigating to previous page: {self._current_page + 1}")
             self._line_start = None
             self._preview_pos = None
             self._drag = None
@@ -854,6 +864,7 @@ class PDFViewerPanel(QWidget):
     def _next_page(self):
         if self._doc and self._current_page < self._doc.page_count - 1:
             self._current_page += 1
+            data_store.dbg(f"Navigating to next page: {self._current_page + 1}")
             self._line_start = None
             self._preview_pos = None
             self._drag = None
