@@ -398,6 +398,7 @@ class MainWindow(QMainWindow):
         btn_box.clear()
         open_btn = btn_box.addButton("Open Folder", QDialogButtonBox.ButtonRole.ActionRole)
         ok_btn = btn_box.addButton(QDialogButtonBox.StandardButton.Ok)
+        ok_btn.setDefault(True)
         open_btn.clicked.connect(lambda: _open_folder(output_dir))
         ok_btn.clicked.connect(dlg.accept)
         dlg.exec()
