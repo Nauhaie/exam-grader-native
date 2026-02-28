@@ -10,8 +10,13 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
+    QDialogButtonBox,
+    QHBoxLayout,
+    QLabel,
     QMainWindow,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QSplitter,
     QVBoxLayout,
@@ -284,13 +289,6 @@ class MainWindow(QMainWindow):
                 self._pdf_viewer.get_annotations(),
             )
 
-        from PySide6.QtWidgets import QProgressDialog
-        progress = QProgressDialog(
-            "Exporting annotated PDFs…", "Cancel", 0, len(self._students), self
-        )
-        progress.setWindowModality(Qt.WindowModality.WindowModal)
-        progress.show()
-
         output_dir = data_store.ANNOTATED_EXPORT_DIR
         template = self._export_template
         debug = self._grading_settings.debug_mode
@@ -303,13 +301,41 @@ class MainWindow(QMainWindow):
             print(f"[Export] Starting annotated PDF export to: {output_dir}")
             print(f"[Export] {len(self._students)} student(s) to process")
 
+        # Single dialog: progress bar → completion message
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Export Annotated PDFs")
+        dlg.setMinimumWidth(420)
+        dlg_layout = QVBoxLayout(dlg)
+        status_label = QLabel("Exporting annotated PDFs…")
+        dlg_layout.addWidget(status_label)
+        progress_bar = QProgressBar()
+        progress_bar.setRange(0, len(self._students))
+        progress_bar.setValue(0)
+        dlg_layout.addWidget(progress_bar)
+        btn_box = QDialogButtonBox()
+        cancel_btn = btn_box.addButton(QDialogButtonBox.StandardButton.Cancel)
+        dlg_layout.addWidget(btn_box)
+        dlg.setModal(True)
+        dlg.show()
+
+        cancelled = False
+
+        def on_cancel():
+            nonlocal cancelled
+            cancelled = True
+
+        cancel_btn.clicked.connect(on_cancel)
+
         exported = skipped = 0
         for i, student in enumerate(self._students):
-            if progress.wasCanceled():
+            if cancelled:
                 if debug:
                     print("[Export] Cancelled by user.")
                 break
-            progress.setValue(i)
+            progress_bar.setValue(i)
+            status_label.setText(
+                f"Exporting annotated PDFs… ({i}/{len(self._students)})"
+            )
             QApplication.processEvents()
             src = os.path.join(self._exams_dir, f"{student.student_number}.pdf")
             if not os.path.isfile(src):
@@ -360,16 +386,21 @@ class MainWindow(QMainWindow):
         if debug:
             print(f"[Export] Done. exported={exported}, skipped={skipped}")
 
-        progress.setValue(len(self._students))
+        # Transition the same dialog to show the completion message
+        progress_bar.setValue(len(self._students))
         msg = f"Exported {exported} annotated PDF(s) to:\n{output_dir}"
         if skipped:
             msg += f"\n({skipped} student(s) skipped — PDF not found)"
-        dlg = QMessageBox(QMessageBox.Icon.Information, "Export", msg, parent=self)
-        open_btn = dlg.addButton("Open Folder", QMessageBox.ButtonRole.ActionRole)
-        dlg.addButton(QMessageBox.StandardButton.Ok)
+        status_label.setText(msg)
+        progress_bar.hide()
+
+        # Replace Cancel with Open Folder + OK
+        btn_box.clear()
+        open_btn = btn_box.addButton("Open Folder", QDialogButtonBox.ButtonRole.ActionRole)
+        ok_btn = btn_box.addButton(QDialogButtonBox.StandardButton.Ok)
+        open_btn.clicked.connect(lambda: _open_folder(output_dir))
+        ok_btn.clicked.connect(dlg.accept)
         dlg.exec()
-        if dlg.clickedButton() is open_btn:
-            _open_folder(output_dir)
 
     def _on_jump_requested(self):
         """'P' key: jump to the grading row for the current student."""
