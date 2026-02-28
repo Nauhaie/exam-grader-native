@@ -3,6 +3,7 @@ import csv
 import os
 import subprocess
 import sys
+from typing import List
 
 import openpyxl
 from PySide6.QtCore import Qt
@@ -27,7 +28,7 @@ from setup_dialog import SetupDialog
 
 
 class _EmptyDefault(dict):
-    """dict subclass that returns 'EMPTY' for missing or empty-string keys."""
+    """dict subclass that returns 'EMPTY' for missing keys."""
     def __missing__(self, key):
         return "EMPTY"
 
@@ -139,7 +140,7 @@ class MainWindow(QMainWindow):
             return
         exam_pts = self._grading_panel.exam_max_points()
         # Collect the union of all extra field names across all students
-        extra_names: list = []
+        extra_names: List[str] = []
         seen: set = set()
         for s in self._students:
             for k in s.extra_fields:
