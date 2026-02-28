@@ -160,7 +160,7 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
     the scanned pages.
 
     If *log_path* is given and *debug* is True, write a human-readable debug log
-    alongside the PDF with full coordinate details for every annotation so issues
+    at *log_path* with full coordinate details for every annotation so issues
     can be diagnosed.  When *debug* is False, no terminal output and no log file
     are produced.
     """

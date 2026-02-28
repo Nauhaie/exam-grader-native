@@ -57,24 +57,27 @@ GRADES_PATH: str = ""
 ANNOTATIONS_DIR: str = ""
 EXPORT_DIR: str = ""
 ANNOTATED_EXPORT_DIR: str = ""
+ANNOTATED_LOGS_DIR: str = ""
 
 
 def set_project_dir(project_dir: str) -> None:
     """Configure all data paths to use *project_dir* as the root."""
     global _active_project_dir, DATA_DIR, GRADES_PATH, ANNOTATIONS_DIR
-    global EXPORT_DIR, ANNOTATED_EXPORT_DIR
+    global EXPORT_DIR, ANNOTATED_EXPORT_DIR, ANNOTATED_LOGS_DIR
     _active_project_dir = os.path.abspath(project_dir)
     DATA_DIR = os.path.join(_active_project_dir, "data")
     GRADES_PATH = os.path.join(DATA_DIR, "grades.json")
     ANNOTATIONS_DIR = os.path.join(DATA_DIR, "annotations")
     EXPORT_DIR = os.path.join(_active_project_dir, "export")
     ANNOTATED_EXPORT_DIR = os.path.join(EXPORT_DIR, "annotated")
+    ANNOTATED_LOGS_DIR = os.path.join(ANNOTATED_EXPORT_DIR, "logs")
     dbg(f"Project dir set to: {_active_project_dir}")
     dbg(f"  DATA_DIR         = {DATA_DIR}")
     dbg(f"  GRADES_PATH      = {GRADES_PATH}")
     dbg(f"  ANNOTATIONS_DIR  = {ANNOTATIONS_DIR}")
     dbg(f"  EXPORT_DIR       = {EXPORT_DIR}")
     dbg(f"  ANNOTATED_EXPORT = {ANNOTATED_EXPORT_DIR}")
+    dbg(f"  ANNOTATED_LOGS   = {ANNOTATED_LOGS_DIR}")
 
 
 def get_project_dir() -> Optional[str]:
@@ -96,6 +99,7 @@ def ensure_data_dirs():
     os.makedirs(ANNOTATIONS_DIR, exist_ok=True)
     os.makedirs(EXPORT_DIR, exist_ok=True)
     os.makedirs(ANNOTATED_EXPORT_DIR, exist_ok=True)
+    os.makedirs(ANNOTATED_LOGS_DIR, exist_ok=True)
     dbg(f"Ensured data dirs exist under {_active_project_dir}")
 
 

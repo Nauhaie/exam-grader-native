@@ -47,6 +47,7 @@ class SettingsDialog(QDialog):
         export_template: str,
         preset_annotations: Optional[List[str]] = None,
         parent=None,
+        extra_field_names: Optional[List[str]] = None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Settings")
@@ -54,6 +55,7 @@ class SettingsDialog(QDialog):
         self.setMinimumHeight(520)
 
         self._exam_max_points = exam_max_points
+        self._extra_field_names = extra_field_names or []
 
         layout = QVBoxLayout(self)
 
@@ -172,18 +174,27 @@ class SettingsDialog(QDialog):
         self._template_edit.setToolTip(
             "Filename template for exported annotated PDFs (without .pdf extension).\n"
             "Available placeholders: {student_number}, {last_name}, {first_name},\n"
-            "and any extra columns from the students CSV."
+            "and any extra columns from the students CSV.\n"
+            "Missing or empty values will be replaced with EMPTY."
         )
         form.addRow("Export filename template:", self._template_edit)
 
         layout.addSpacing(8)
-        hint = QLabel(
-            "Placeholders: <tt>{student_number}</tt>, <tt>{last_name}</tt>, "
-            "<tt>{first_name}</tt> + any extra CSV columns."
+        placeholders_label = QLabel("<b>Available placeholders</b> (select and copy-paste):")
+        placeholders_label.setStyleSheet("color: #555;")
+        layout.addWidget(placeholders_label)
+
+        all_placeholders = ["{student_number}", "{last_name}", "{first_name}"] + [
+            "{" + name + "}" for name in self._extra_field_names
+        ]
+        placeholders_edit = QLineEdit("  ".join(all_placeholders))
+        placeholders_edit.setReadOnly(True)
+        placeholders_edit.setStyleSheet(
+            "color: #333; background: #f0f0f0; border: 1px solid #ccc; "
+            "padding: 4px; font-family: monospace;"
         )
-        hint.setWordWrap(True)
-        hint.setStyleSheet("color: #555;")
-        layout.addWidget(hint)
+        placeholders_edit.setToolTip("Select a placeholder and copy-paste it into the template above")
+        layout.addWidget(placeholders_edit)
 
         layout.addSpacing(16)
 
@@ -224,7 +235,8 @@ class SettingsDialog(QDialog):
             "When enabled, detailed messages are printed to the terminal "
             "throughout the application — when loading PDFs, project data, "
             "annotations, navigating pages, switching students, exporting, etc. "
-            "A <tt>.log</tt> file is also written next to each exported annotated PDF."
+            "A <tt>.log</tt> file is also written in the <tt>logs</tt> subfolder "
+            "of the annotated PDF export directory."
         )
         debug_hint.setWordWrap(True)
         debug_hint.setStyleSheet("color: #555;")
