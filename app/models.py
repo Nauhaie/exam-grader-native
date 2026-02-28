@@ -33,6 +33,7 @@ class GradingSettings:
     rounding: float = 0.5           # round to nearest multiple of this value
     score_total: Optional[float] = None  # denominator; None = sum of all exam points
     debug_mode: bool = False        # print debug messages and write .log files
+    cover_page_detail: bool = False # cover page: True = show subquestion detail, False = per-exercise only
 
 
 @dataclass
