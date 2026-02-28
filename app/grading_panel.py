@@ -605,6 +605,7 @@ class GradingPanel(QWidget):
         if text == "":
             sg = self._grades.get(student.student_number, {})
             sg.pop(sq.name, None)
+            data_store.save_grades(self._grades)
             self._rebuilding = True
             self._table.blockSignals(True)
             item.setBackground(QColor(232, 232, 232))

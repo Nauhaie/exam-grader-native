@@ -147,57 +147,8 @@ def _left_text(page, text: str, x: float, y: float, max_w: float,
                         color=color, align=0)  # align=0 → left
 
 
-def export_all(
-    students: List[Student],
-    exams_dir: str,
-    annotations_loader: Callable[[str], List[Annotation]],
-    output_dir: str,
-    filename_template: str = "{student_number}_annotated",
-    progress_cb: Optional[Callable[[int, int], None]] = None,
-) -> tuple[int, int]:
-    """Bake annotations into each student's PDF and save to *output_dir*.
-
-    *filename_template* may reference any field of the student CSV row, e.g.
-    ``"Exam1_{participantID}_annotated"``.  Falls back to
-    ``"{student_number}_annotated"`` for missing keys.
-
-    Returns *(exported, skipped)* counts.
-    """
-    os.makedirs(output_dir, exist_ok=True)
-    exported = skipped = 0
-    total = len(students)
-    for i, student in enumerate(students):
-        if progress_cb:
-            progress_cb(i, total)
-        src = os.path.join(exams_dir, f"{student.student_number}.pdf")
-        if not os.path.isfile(src):
-            skipped += 1
-            continue
-        anns = annotations_loader(student.student_number)
-
-        # Build output filename from template
-        fields = dict(student.extra_fields)
-        fields.update(
-            student_number=student.student_number,
-            last_name=student.last_name,
-            first_name=student.first_name,
-        )
-        try:
-            stem = filename_template.format_map(fields)
-        except (KeyError, ValueError):
-            stem = f"{student.student_number}_annotated"
-        dst = os.path.join(output_dir, f"{stem}.pdf")
-
-        log_path = os.path.join(output_dir, f"{stem}.log")
-        bake_annotations(src, anns, dst, log_path=log_path)
-        exported += 1
-    if progress_cb:
-        progress_cb(total, total)
-    return exported, skipped
-
-
 def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: str,
-                     log_path: Optional[str] = None, debug: bool = True,
+                     log_path: Optional[str] = None, debug: bool = False,
                      student: Optional[Student] = None,
                      grades: Optional[dict] = None,
                      scheme: Optional[GradingScheme] = None,

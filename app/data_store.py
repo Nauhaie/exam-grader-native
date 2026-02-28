@@ -10,11 +10,29 @@ from models import Annotation, Exercise, GradingScheme, GradingSettings, Student
 
 _debug: bool = False
 
+# Suppress noisy MuPDF error/warning output by default; set_debug(True) re-enables it.
+try:
+    import fitz as _fitz
+    _fitz.TOOLS.mupdf_display_errors(False)
+    _fitz.TOOLS.mupdf_display_warnings(False)
+except (ImportError, AttributeError):
+    pass
+
 
 def set_debug(enabled: bool) -> None:
-    """Enable or disable debug logging to the terminal."""
+    """Enable or disable debug logging to the terminal.
+
+    Also toggles MuPDF error/warning display so that noisy messages from
+    slightly-corrupt PDFs are hidden unless the user opts into debug mode.
+    """
     global _debug
     _debug = enabled
+    try:
+        import fitz
+        fitz.TOOLS.mupdf_display_errors(enabled)
+        fitz.TOOLS.mupdf_display_warnings(enabled)
+    except (ImportError, AttributeError):
+        pass
     if enabled:
         print("[DEBUG] Debug mode enabled")
 
@@ -210,12 +228,19 @@ def load_students(csv_path: str) -> List[Student]:
     dbg(f"Loading students from {csv_path}")
     _CORE = {"student_number", "last_name", "first_name"}
     students = []
+    seen_ids: set = set()
     with open(csv_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
+            sn = str(row["student_number"]).strip()
+            if sn in seen_ids:
+                raise ValueError(
+                    f"Duplicate student number '{sn}' in {csv_path}"
+                )
+            seen_ids.add(sn)
             extra = {k: str(v).strip() for k, v in row.items() if k not in _CORE}
             students.append(Student(
-                student_number=str(row["student_number"]).strip(),
+                student_number=sn,
                 last_name=str(row["last_name"]).strip(),
                 first_name=str(row["first_name"]).strip(),
                 extra_fields=extra,
