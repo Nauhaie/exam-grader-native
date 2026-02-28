@@ -6,8 +6,8 @@ import sys
 from typing import List
 
 import openpyxl
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction
+from PySide6.QtCore import QEvent, QTimer, Qt
+from PySide6.QtGui import QAction, QCursor
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -56,6 +56,39 @@ class MainWindow(QMainWindow):
 
         self._setup_ui()
         self._load_session()
+
+    # ── Full-screen cursor workaround ─────────────────────────────────────────
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange:
+            # macOS full-screen transitions can permanently break Qt's
+            # internal cursor tracking for all child widgets (including
+            # the QSplitter handle).  Schedule a cursor re-sync after the
+            # platform animation completes.
+            QTimer.singleShot(300, self._resync_cursors)
+
+    def _resync_cursors(self):
+        """Force Qt to re-sync native cursor state after a window-state change.
+
+        A setOverrideCursor / restoreOverrideCursor cycle makes Qt's
+        platform integration layer re-evaluate which native cursor should
+        be displayed, fixing the stale state left by macOS full-screen
+        animations.  Additionally, re-setting every widget-level cursor
+        ensures Qt re-registers cursor rects with Cocoa.
+        """
+        # Re-install the viewport event filter in case the scroll area
+        # recreated its viewport widget during the window-state change.
+        self._pdf_viewer.reinstall_viewport_filter()
+        # Re-set every widget-level cursor so Qt re-registers them.
+        for widget in self.findChildren(QWidget):
+            if widget.testAttribute(Qt.WidgetAttribute.WA_SetCursor):
+                widget.setCursor(widget.cursor())
+        # Override-cursor cycle to flush platform cursor state.
+        # The specific shape (ArrowCursor) is irrelevant — the push/pop
+        # forces Qt's Cocoa backend to re-query the native cursor.
+        QApplication.setOverrideCursor(Qt.CursorShape.ArrowCursor)
+        QApplication.restoreOverrideCursor()
 
     def _setup_ui(self):
         file_menu = self.menuBar().addMenu("File")
@@ -224,13 +257,41 @@ class MainWindow(QMainWindow):
         self._grades[student_number][subquestion_name] = points
         data_store.save_grades(self._grades)
 
+    def _compute_student_grade(self, sg: dict, subquestions) -> tuple:
+        """Return (total_points, final_grade) for a student's scores dict."""
+        gs = self._grading_settings
+        scheme_total = self._grading_scheme.max_total()
+        score_total = gs.score_total if gs.score_total is not None else scheme_total
+        pts = sum(sg.get(sq.name, 0) or 0 for sq in subquestions)
+        if score_total <= 0:
+            return pts, 0.0
+        # Round to nearest multiple of gs.rounding (same as GradingPanel)
+        step = max(0.001, gs.rounding)
+        grade = round((pts / score_total) * gs.max_note / step) * step
+        return pts, grade
+
+    def _extra_field_names(self) -> List[str]:
+        """Return the ordered union of extra field names across all students."""
+        names: List[str] = []
+        seen: set = set()
+        for s in self._students:
+            for k in s.extra_fields:
+                if k not in seen:
+                    seen.add(k)
+                    names.append(k)
+        return names
+
     def _export_csv(self):
         if not self._grading_scheme or not self._students:
             QMessageBox.warning(self, "Export", "No project open.")
             return
         path = os.path.join(data_store.EXPORT_DIR, "grades.csv")
         subquestions = [sq for ex in self._grading_scheme.exercises for sq in ex.subquestions]
-        fieldnames = ["student_number", "last_name", "first_name"] + [sq.name for sq in subquestions]
+        extra_names = self._extra_field_names()
+        fieldnames = (["student_number", "last_name", "first_name"]
+                      + extra_names
+                      + [sq.name for sq in subquestions]
+                      + ["total", "grade"])
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
@@ -241,8 +302,13 @@ class MainWindow(QMainWindow):
                     "last_name": student.last_name,
                     "first_name": student.first_name,
                 }
+                for name in extra_names:
+                    row[name] = student.extra_fields.get(name, "")
                 for sq in subquestions:
                     row[sq.name] = sg.get(sq.name, "")
+                pts, grade = self._compute_student_grade(sg, subquestions)
+                row["total"] = pts
+                row["grade"] = grade
                 writer.writerow(row)
         dlg = QMessageBox(QMessageBox.Icon.Information, "Export",
                           f"Grades exported to:\n{path}", parent=self)
@@ -258,15 +324,22 @@ class MainWindow(QMainWindow):
             return
         path = os.path.join(data_store.EXPORT_DIR, "grades.xlsx")
         subquestions = [sq for ex in self._grading_scheme.exercises for sq in ex.subquestions]
+        extra_names = self._extra_field_names()
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Grades"
-        ws.append(["student_number", "last_name", "first_name"] + [sq.name for sq in subquestions])
+        ws.append(["student_number", "last_name", "first_name"]
+                  + extra_names
+                  + [sq.name for sq in subquestions]
+                  + ["total", "grade"])
         for student in self._students:
             sg = self._grades.get(student.student_number, {})
+            pts, grade = self._compute_student_grade(sg, subquestions)
             ws.append(
                 [student.student_number, student.last_name, student.first_name]
+                + [student.extra_fields.get(name, "") for name in extra_names]
                 + [sg.get(sq.name, "") for sq in subquestions]
+                + [pts, grade]
             )
         wb.save(path)
         dlg = QMessageBox(QMessageBox.Icon.Information, "Export",
