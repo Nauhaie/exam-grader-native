@@ -286,6 +286,15 @@ class ClickableLabel(QLabel):
         super().__init__(parent)
         self.setMouseTracking(True)
 
+    def event(self, event):
+        # Suppress hover events so that QLabel's internal link-cursor
+        # bookkeeping (and any platform-level hover processing) never
+        # fires and cannot override the cursor set by _set_page_cursor().
+        # All mouse interaction is handled via mouseMoveEvent / leaveEvent.
+        if event.type() in (QEvent.Type.HoverMove, QEvent.Type.HoverLeave):
+            return True
+        return super().event(event)
+
     def _frac(self, event) -> Tuple[float, float]:
         w, h = self.width(), self.height()
         if w > 0 and h > 0:
@@ -1244,6 +1253,13 @@ class PDFViewerPanel(QWidget):
         """Intercept scroll-viewport events for zoom gestures."""
         if obj is self._scroll.viewport():
             t = event.type()
+            # Suppress viewport hover events while we are managing the
+            # cursor, so QAbstractScrollArea's internal hover processing
+            # cannot reset the cursor shape we set in _set_page_cursor().
+            if t in (QEvent.Type.HoverMove, QEvent.Type.HoverLeave):
+                if self._page_label.testAttribute(
+                        Qt.WidgetAttribute.WA_SetCursor):
+                    return True
             # Ctrl + scroll wheel → zoom (works on all platforms)
             if t == QEvent.Type.Wheel:
                 if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
