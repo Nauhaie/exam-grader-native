@@ -582,7 +582,8 @@ class PDFViewerPanel(QWidget):
             if drag is not None:
                 if drag.kind in ("text-resize", "circle-edge"):
                     self._page_label.setCursor(Qt.CursorShape.SizeVerCursor)
-                elif drag.kind.startswith("rectcross-") and drag.kind != "rectcross-move":
+                elif drag.kind in ("rectcross-tl", "rectcross-tr",
+                                    "rectcross-bl", "rectcross-br"):
                     self._page_label.setCursor(Qt.CursorShape.SizeAllCursor)
                 else:
                     self._page_label.setCursor(Qt.CursorShape.OpenHandCursor)
