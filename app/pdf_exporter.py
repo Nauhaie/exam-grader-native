@@ -72,7 +72,7 @@ def _insert_cover_page(
     fs_title = min(pw, ph) * 0.028     # slightly smaller for name+ID line
     fs_mark = min(pw, ph) * 0.04       # smaller grade
     fs_body = min(pw, ph) * 0.018      # ~15 pt on A4
-    fs_small = min(pw, ph) * 0.012     # ~10 pt on A4
+    fs_small = min(pw, ph) * 0.012     # ~7 pt on A4
     line_gap = fs_body * 1.6
 
     # ── Student name + ID (same line) ────────────────────────────────────
@@ -108,7 +108,7 @@ def _insert_cover_page(
             # Compact: exercise name, total, then all subquestion scores on one line
             parts = [f"{sq.name}: {(student_scores.get(sq.name, 0) or 0):g}/{sq.max_points:g}"
                      for sq in ex.subquestions]
-            detail_str = "  (" + ",  ".join(parts) + ")"
+            detail_str = "  (" + ", ".join(parts) + ")"
             ex_label = f"{ex.name}:  {ex_pts:g}/{ex_max:g}{detail_str}"
             _left_text(page, ex_label, col_name_x, y, usable_w, fs_small)
         else:

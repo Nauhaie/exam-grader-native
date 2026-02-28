@@ -1,4 +1,20 @@
-"""Center panel: PDF viewer with annotation support."""
+"""Center panel: PDF viewer with annotation support.
+
+PDF rendering backend
+---------------------
+Currently uses **PyMuPDF (fitz)**, which wraps the MuPDF C library.
+MuPDF is the standard high-quality renderer used with Qt-based apps.
+
+Potential faster alternatives (for future evaluation):
+ * **QPdfDocument** (built into Qt 6.4+) — zero-dependency, threaded tile
+   rendering via ``QPdfDocument.render()``.  No extra install, but lacks
+   some MuPDF features (annotations, text extraction).
+ * **Poppler (python-poppler-qt6)** — wraps the Poppler C++ library used by
+   Evince/Okular.  Comparable quality to MuPDF; may be faster for certain
+   page layouts.
+ * **pdfium (pypdfium2)** — wraps Google's PDFium (used in Chrome).  Very
+   fast rasterisation, especially on large or complex pages.
+"""
 import math
 import os
 from dataclasses import dataclass
