@@ -462,9 +462,20 @@ class PDFViewerPanel(QWidget):
         self._invalidate_cache()
         if pdf_path and os.path.isfile(pdf_path):
             self._pdf_path = pdf_path
-            self._doc = fitz.open(pdf_path)
-            data_store.dbg(f"PDF loaded: {pdf_path} ({self._doc.page_count} page(s))")
-            self._render_page()
+            try:
+                self._doc = fitz.open(pdf_path)
+                if self._doc.page_count == 0:
+                    raise ValueError("PDF has no pages")
+                data_store.dbg(f"PDF loaded: {pdf_path} ({self._doc.page_count} page(s))")
+                self._render_page()
+            except Exception as exc:
+                data_store.dbg(f"Failed to open PDF: {pdf_path}: {exc}")
+                if self._doc:
+                    self._doc.close()
+                    self._doc = None
+                self._show_placeholder(
+                    f"Cannot display this PDF.\n({os.path.basename(pdf_path)})"
+                )
         else:
             self._pdf_path = None
             data_store.dbg(f"PDF not found or no path given: {pdf_path}")
@@ -520,11 +531,11 @@ class PDFViewerPanel(QWidget):
         pm = self._page_label.pixmap()
         return _pm_logical_size(pm)
 
-    def _show_placeholder(self):
+    def _show_placeholder(self, message: str = "No PDF loaded.\nSelect a student from the list."):
         self._raw_pixmap = None
         self._base_pixmap = None
         self._page_label.setPixmap(QPixmap())
-        self._page_label.setText("No PDF loaded.\nSelect a student from the list.")
+        self._page_label.setText(message)
         self._page_label.resize(400, 300)
         self._page_counter.setText("Page — / —")
         self._prev_btn.setEnabled(False)
@@ -548,7 +559,14 @@ class PDFViewerPanel(QWidget):
                 and self._cache_dpr == dpr):
             raw = self._page_cache[self._current_page]
         else:
-            raw = self._render_page_pixmap(self._current_page, dpr)
+            try:
+                raw = self._render_page_pixmap(self._current_page, dpr)
+            except Exception as exc:
+                data_store.dbg(f"Failed to render page {self._current_page + 1}: {exc}")
+                self._show_placeholder(
+                    f"Cannot render page {self._current_page + 1}.\nThe PDF may be corrupted."
+                )
+                return
             self._page_cache[self._current_page] = raw
             self._cache_zoom = self._zoom
             self._cache_dpr = dpr
@@ -589,7 +607,10 @@ class PDFViewerPanel(QWidget):
             self._cache_dpr = dpr
         for idx in (self._current_page - 1, self._current_page + 1):
             if 0 <= idx < self._doc.page_count and idx not in self._page_cache:
-                self._page_cache[idx] = self._render_page_pixmap(idx, dpr)
+                try:
+                    self._page_cache[idx] = self._render_page_pixmap(idx, dpr)
+                except Exception:
+                    pass  # skip pre-render for corrupt pages
 
     def _rebuild_base_and_display(self):
         """Redraw all annotations onto the cached raw page, refresh display."""

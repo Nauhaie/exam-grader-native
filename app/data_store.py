@@ -10,11 +10,29 @@ from models import Annotation, Exercise, GradingScheme, GradingSettings, Student
 
 _debug: bool = False
 
+# Suppress noisy MuPDF error/warning output by default; set_debug(True) re-enables it.
+try:
+    import fitz as _fitz
+    _fitz.TOOLS.mupdf_display_errors(False)
+    _fitz.TOOLS.mupdf_display_warnings(False)
+except Exception:
+    pass
+
 
 def set_debug(enabled: bool) -> None:
-    """Enable or disable debug logging to the terminal."""
+    """Enable or disable debug logging to the terminal.
+
+    Also toggles MuPDF error/warning display so that noisy messages from
+    slightly-corrupt PDFs are hidden unless the user opts into debug mode.
+    """
     global _debug
     _debug = enabled
+    try:
+        import fitz
+        fitz.TOOLS.mupdf_display_errors(enabled)
+        fitz.TOOLS.mupdf_display_warnings(enabled)
+    except Exception:
+        pass
     if enabled:
         print("[DEBUG] Debug mode enabled")
 
