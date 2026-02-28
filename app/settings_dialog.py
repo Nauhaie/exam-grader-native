@@ -235,7 +235,8 @@ class SettingsDialog(QDialog):
             "When enabled, detailed messages are printed to the terminal "
             "throughout the application — when loading PDFs, project data, "
             "annotations, navigating pages, switching students, exporting, etc. "
-            "A <tt>.log</tt> file is also written next to each exported annotated PDF."
+            "A <tt>.log</tt> file is also written in the <tt>logs</tt> subfolder "
+            "of the annotated PDF export directory."
         )
         debug_hint.setWordWrap(True)
         debug_hint.setStyleSheet("color: #555;")

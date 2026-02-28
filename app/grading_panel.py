@@ -273,8 +273,6 @@ class GradingPanel(QWidget):
         if item is not None:
             self._table.editItem(item)
 
-    # ── Internal ──────────────────────────────────────────────────────────────
-
     def _filtered_students(self) -> List[Student]:
         text = self._search.text().strip().lower()
         if not text:
