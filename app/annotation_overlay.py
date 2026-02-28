@@ -73,6 +73,10 @@ def draw_preview(
         radius = int(math.hypot(x2 - x1, y2 - y1))
         if radius > 0:
             painter.drawEllipse(x1 - radius, y1 - radius, radius * 2, radius * 2)
+    elif tool == "rectcross":
+        # Preview: dashed diagonals of the rectangle (no rectangle border)
+        painter.drawLine(x1, y1, x2, y2)
+        painter.drawLine(x2, y1, x1, y2)
 
     # Start-point dot
     dot_r = max(2, round(4 * s))
@@ -122,6 +126,14 @@ def find_annotation_at(
             )
             dist = math.hypot(px * img_width - cx, py * img_height - cy)
             if abs(dist - radius) <= tolerance_px:
+                return i
+        elif ann.type == "rectcross" and ann.x2 is not None and ann.y2 is not None:
+            # Hit either diagonal of the rectangle
+            x1, y1 = ann.x * img_width, ann.y * img_height
+            x2, y2 = ann.x2 * img_width, ann.y2 * img_height
+            d1 = _pt_seg_dist(px * img_width, py * img_height, x1, y1, x2, y2)
+            d2 = _pt_seg_dist(px * img_width, py * img_height, x2, y1, x1, y2)
+            if min(d1, d2) <= tolerance_px:
                 return i
         elif ann.type == "text" and ann.text:
             rect = get_text_box_rect(ann, img_width, img_height)
@@ -237,6 +249,20 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
         painter.setPen(QPen(QColor(70, 130, 230), max(1, round(1.5 * s))))
         painter.setBrush(QColor(70, 130, 230, 200))
         painter.drawEllipse(bx - hs // 2, by - hs // 2, hs, hs)
+
+    elif ann.type == "rectcross" and ann.x2 is not None and ann.y2 is not None:
+        x2 = int(ann.x2 * w)
+        y2 = int(ann.y2 * h)
+        # Draw the two diagonals of the rectangle (no rectangle border)
+        painter.setPen(QPen(_RED, thick))
+        painter.drawLine(cx, cy, x2, y2)
+        painter.drawLine(x2, cy, cx, y2)
+        # Draw small blue handles at the 4 corners
+        hs = max(4, round(_RESIZE_HANDLE * s))
+        painter.setPen(QPen(QColor(70, 130, 230), max(1, round(1.5 * s))))
+        painter.setBrush(QColor(70, 130, 230, 200))
+        for hx, hy in [(cx, cy), (x2, cy), (cx, y2), (x2, y2)]:
+            painter.drawEllipse(hx - hs // 2, hy - hs // 2, hs, hs)
 
 
 def _draw_arrow(painter: QPainter, x1: int, y1: int, x2: int, y2: int,

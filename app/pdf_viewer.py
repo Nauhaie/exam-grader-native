@@ -8,8 +8,9 @@ import fitz  # pymupdf
 from PySide6.QtCore import QObject, QEvent, QPoint, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QCursor, QFont, QImage, QPixmap
 from PySide6.QtWidgets import (
-    QApplication, QHBoxLayout, QLabel, QLineEdit,
-    QPlainTextEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget,
+    QApplication, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QListWidgetItem, QPlainTextEdit, QPushButton, QScrollArea,
+    QVBoxLayout, QWidget,
 )
 
 import annotation_overlay
@@ -25,6 +26,8 @@ TOOL_ARROW     = "arrow"
 TOOL_CIRCLE    = "circle"
 TOOL_TILDE     = "tilde"
 TOOL_ERASER    = "eraser"
+TOOL_STAMP     = "stamp"
+TOOL_RECTCROSS = "rectcross"
 
 _KEY_TOOL_MAP = {
     Qt.Key.Key_V: TOOL_CHECKMARK,
@@ -35,6 +38,8 @@ _KEY_TOOL_MAP = {
     Qt.Key.Key_O: TOOL_CIRCLE,
     Qt.Key.Key_N: TOOL_TILDE,
     Qt.Key.Key_E: TOOL_ERASER,
+    Qt.Key.Key_S: TOOL_STAMP,
+    Qt.Key.Key_R: TOOL_RECTCROSS,
 }
 
 _DRAG_TOL = 20          # pixel hit-tolerance for drag handles
@@ -294,6 +299,7 @@ class PDFViewerPanel(QWidget):
     jump_requested         = Signal()   # 'P' key
     student_prev_requested = Signal()   # Shift+Alt+Left
     student_next_requested = Signal()   # Shift+Alt+Right
+    open_settings_presets_requested = Signal()  # from stamp popup "Edit Presets…"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -314,6 +320,8 @@ class PDFViewerPanel(QWidget):
         self._pan_origin: Optional[Tuple[int, int]] = None
         self._pan_hval: int = 0
         self._pan_vval: int = 0
+        self._preset_annotations: List[str] = []
+        self._stamp_popup: Optional[QWidget] = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -332,6 +340,8 @@ class PDFViewerPanel(QWidget):
             (TOOL_ARROW,     "→", "Arrow (A)"),
             (TOOL_CIRCLE,    "○", "Circle (O)"),
             (TOOL_TILDE,     "~", "Approx/tilde (N)"),
+            (TOOL_RECTCROSS, "⊠", "Rect cross (R)"),
+            (TOOL_STAMP,     "S", "Stamp preset text (S)"),
             (TOOL_ERASER,    "⌫", "Eraser (E)"),
         ]:
             btn = QPushButton(label)
@@ -419,6 +429,7 @@ class PDFViewerPanel(QWidget):
         self._preview_pos = None
         self._drag = None
         self._cancel_inline_editor()
+        self._close_stamp_popup()
         if pdf_path and os.path.isfile(pdf_path):
             self._pdf_path = pdf_path
             self._doc = fitz.open(pdf_path)
@@ -440,6 +451,7 @@ class PDFViewerPanel(QWidget):
         if tool != self._active_tool:
             self._line_start = None
             self._preview_pos = None
+            self._close_stamp_popup()
             data_store.dbg(f"Tool changed: {self._active_tool!r} → {tool!r}")
         self._active_tool = tool
         for t, btn in self._tool_buttons.items():
@@ -450,6 +462,10 @@ class PDFViewerPanel(QWidget):
 
     def get_annotations(self) -> List[Annotation]:
         return self._annotations
+
+    def set_preset_annotations(self, presets: List[str]):
+        """Update the list of preset texts available to the Stamp tool."""
+        self._preset_annotations = list(presets)
 
     def prev_page(self):
         """Navigate to the previous page (public, also used by shortcuts)."""
@@ -514,7 +530,7 @@ class PDFViewerPanel(QWidget):
         """Compose base + optional preview, push to screen."""
         if self._base_pixmap is None:
             return
-        if (self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE)
+        if (self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE, TOOL_RECTCROSS)
                 and self._line_start is not None
                 and self._preview_pos is not None):
             display = self._base_pixmap.copy()
@@ -566,6 +582,9 @@ class PDFViewerPanel(QWidget):
             if drag is not None:
                 if drag.kind in ("text-resize", "circle-edge"):
                     self._page_label.setCursor(Qt.CursorShape.SizeVerCursor)
+                elif drag.kind in ("rectcross-tl", "rectcross-tr",
+                                    "rectcross-bl", "rectcross-br"):
+                    self._page_label.setCursor(Qt.CursorShape.SizeAllCursor)
                 else:
                     self._page_label.setCursor(Qt.CursorShape.OpenHandCursor)
             else:
@@ -576,7 +595,7 @@ class PDFViewerPanel(QWidget):
             self._drag_moved = True
             self._apply_drag(fx, fy)
             return
-        if (self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE)
+        if (self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE, TOOL_RECTCROSS)
                 and self._line_start is not None):
             self._preview_pos = (fx, fy)
             self._update_display()
@@ -626,7 +645,7 @@ class PDFViewerPanel(QWidget):
             else:
                 self._start_text_edit(fx, fy)
 
-        elif self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE):
+        elif self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE, TOOL_RECTCROSS):
             if self._line_start is None:
                 self._line_start = (fx, fy)
                 self._preview_pos = (fx, fy)
@@ -650,6 +669,9 @@ class PDFViewerPanel(QWidget):
                 self._rebuild_base_and_display()
                 self.annotations_changed.emit()
                 self.deselect_tool()
+
+        elif self._active_tool == TOOL_STAMP:
+            self._show_stamp_popup(fx, fy)
 
         else:  # checkmark, cross, or tilde
             self._annotations.append(Annotation(
@@ -712,6 +734,21 @@ class PDFViewerPanel(QWidget):
             ann.x2, ann.y2 = cl(d.orig_x2 + dx), cl(d.orig_y2 + dy)
         elif d.kind == "text-resize":
             ann.width = max(0.02, min(1.0, d.orig_width + dx))
+        elif d.kind == "rectcross-move":
+            ann.x,  ann.y  = cl(d.orig_x  + dx), cl(d.orig_y  + dy)
+            ann.x2, ann.y2 = cl(d.orig_x2 + dx), cl(d.orig_y2 + dy)
+        elif d.kind == "rectcross-tl":
+            ann.x = cl(d.orig_x + dx)
+            ann.y = cl(d.orig_y + dy)
+        elif d.kind == "rectcross-tr":
+            ann.x2 = cl(d.orig_x2 + dx)
+            ann.y  = cl(d.orig_y  + dy)
+        elif d.kind == "rectcross-bl":
+            ann.x  = cl(d.orig_x  + dx)
+            ann.y2 = cl(d.orig_y2 + dy)
+        elif d.kind == "rectcross-br":
+            ann.x2 = cl(d.orig_x2 + dx)
+            ann.y2 = cl(d.orig_y2 + dy)
 
         self._rebuild_base_and_display()
 
@@ -749,6 +786,29 @@ class PDFViewerPanel(QWidget):
                 # Move: grab near the circumference (but not the handle area)
                 if abs(math.hypot(mx - cx, my - cy) - radius) <= tol:
                     return _DragState("circle-move", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+
+            elif ann.type == "rectcross" and ann.x2 is not None:
+                # 4 corners of the rectangle
+                corners = [
+                    (ann.x * w, ann.y * h),
+                    (ann.x2 * w, ann.y * h),
+                    (ann.x * w, ann.y2 * h),
+                    (ann.x2 * w, ann.y2 * h),
+                ]
+                corner_kinds = [
+                    "rectcross-tl", "rectcross-tr",
+                    "rectcross-bl", "rectcross-br",
+                ]
+                for (ccx, ccy), kind in zip(corners, corner_kinds):
+                    if math.hypot(mx - ccx, my - ccy) <= tol:
+                        return _DragState(kind, i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+                # Move: grab on either diagonal line
+                x1, y1 = ann.x * w, ann.y * h
+                x2, y2 = ann.x2 * w, ann.y2 * h
+                d1 = annotation_overlay._pt_seg_dist(mx, my, x1, y1, x2, y2)
+                d2 = annotation_overlay._pt_seg_dist(mx, my, x2, y1, x1, y2)
+                if min(d1, d2) <= tol:
+                    return _DragState("rectcross-move", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
 
             elif ann.type == "text":
                 rect = annotation_overlay.get_text_box_rect(ann, w, h)
@@ -848,6 +908,91 @@ class PDFViewerPanel(QWidget):
         if self._inline_editor is not None:
             self._inline_editor.deleteLater()
             self._inline_editor = None
+
+    # ── Stamp popup (preset text annotation picker) ──────────────────────────
+
+    def _show_stamp_popup(self, fx: float, fy: float):
+        self._close_stamp_popup()
+        if not self._preset_annotations:
+            return
+        pm = self._page_label.pixmap()
+        if not pm or pm.isNull():
+            return
+
+        vp = self._scroll.viewport()
+        cx = int(fx * pm.width())
+        cy = int(fy * pm.height())
+        pos = self._page_label.mapTo(vp, QPoint(cx, cy))
+
+        popup = QWidget(vp)
+        popup.setStyleSheet(
+            "QWidget { background: #fff; border: 1px solid #888; }"
+        )
+        playout = QVBoxLayout(popup)
+        playout.setContentsMargins(4, 4, 4, 4)
+        playout.setSpacing(2)
+
+        filter_edit = QLineEdit()
+        filter_edit.setPlaceholderText("Filter presets…")
+        filter_edit.setStyleSheet("QLineEdit { border: 1px solid #ccc; }")
+        playout.addWidget(filter_edit)
+
+        preset_list = QListWidget()
+        preset_list.setStyleSheet(
+            "QListWidget { border: none; }"
+            "QListWidget::item { padding: 3px; }"
+            "QListWidget::item:hover { background: #e0e8f0; }"
+        )
+        for text in self._preset_annotations:
+            preset_list.addItem(QListWidgetItem(text))
+        playout.addWidget(preset_list)
+
+        def _filter_presets(query: str):
+            q = query.strip().lower()
+            for i in range(preset_list.count()):
+                item = preset_list.item(i)
+                item.setHidden(q != "" and q not in item.text().lower())
+
+        filter_edit.textChanged.connect(_filter_presets)
+
+        def _on_pick(item: QListWidgetItem):
+            text = item.text()
+            self._close_stamp_popup()
+            self._annotations.append(Annotation(
+                page=self._current_page, type="text",
+                x=fx, y=fy, text=text,
+            ))
+            self._rebuild_base_and_display()
+            self.annotations_changed.emit()
+            self.deselect_tool()
+
+        preset_list.itemClicked.connect(_on_pick)
+
+        edit_btn = QPushButton("Edit Presets…")
+        edit_btn.setStyleSheet("QPushButton { border: 1px solid #ccc; padding: 3px; }")
+        def _on_edit_presets():
+            self._close_stamp_popup()
+            self.deselect_tool()
+            self.open_settings_presets_requested.emit()
+        edit_btn.clicked.connect(_on_edit_presets)
+        playout.addWidget(edit_btn)
+
+        popup.adjustSize()
+        # Ensure popup fits within viewport
+        pw, ph = popup.width(), popup.height()
+        vw, vh = vp.width(), vp.height()
+        px = min(pos.x(), max(0, vw - pw))
+        py = min(pos.y(), max(0, vh - ph))
+        popup.move(px, py)
+        popup.show()
+        popup.raise_()
+        filter_edit.setFocus()
+        self._stamp_popup = popup
+
+    def _close_stamp_popup(self):
+        if self._stamp_popup is not None:
+            self._stamp_popup.deleteLater()
+            self._stamp_popup = None
 
     # ── Navigation / zoom ─────────────────────────────────────────────────────
 

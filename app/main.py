@@ -39,6 +39,7 @@ class MainWindow(QMainWindow):
         self._export_template = "{student_number}_annotated"
         self._project_config: dict = {}
         self._grading_settings: GradingSettings = GradingSettings()
+        self._preset_annotations: list = []
 
         self._setup_ui()
         self._load_session()
@@ -69,6 +70,7 @@ class MainWindow(QMainWindow):
         self._pdf_viewer.jump_requested.connect(self._on_jump_requested)
         self._pdf_viewer.student_prev_requested.connect(self._select_prev_student)
         self._pdf_viewer.student_next_requested.connect(self._select_next_student)
+        self._pdf_viewer.open_settings_presets_requested.connect(self._show_settings)
         splitter.addWidget(self._pdf_viewer)
 
         # Right: grading spreadsheet
@@ -109,12 +111,14 @@ class MainWindow(QMainWindow):
         self._grading_settings = data_store.load_grading_settings_from_config(self._project_config)
         data_store.set_debug(self._grading_settings.debug_mode)
         self._export_template = data_store.get_export_filename_template(self._project_config)
+        self._preset_annotations = data_store.load_preset_annotations(self._project_config)
         self._exams_dir = os.path.join(project_dir, "exams")
         self._students = data_store.load_students(os.path.join(project_dir, "students.csv"))
         self._grades = data_store.load_grades()
         data_store.ensure_data_dirs()
         self._grading_panel.set_session(self._students, self._grading_scheme, self._grades)
         self._grading_panel.set_grading_settings(self._grading_settings)
+        self._pdf_viewer.set_preset_annotations(self._preset_annotations)
         data_store.dbg(f"Project applied successfully: {len(self._students)} student(s)")
         if self._students:
             self._select_student(self._students[0])
@@ -129,6 +133,7 @@ class MainWindow(QMainWindow):
             self._grading_scheme,
             exam_pts,
             self._export_template,
+            self._preset_annotations,
             self,
         )
         if dlg.exec():
@@ -138,10 +143,12 @@ class MainWindow(QMainWindow):
             self._export_template = dlg.get_export_template()
             new_scheme = dlg.get_grading_scheme()
             self._grading_scheme = new_scheme
+            self._preset_annotations = dlg.get_preset_annotations()
             self._grading_panel.set_grading_settings(self._grading_settings)
             self._grading_panel.set_session(
                 self._students, self._grading_scheme, self._grades
             )
+            self._pdf_viewer.set_preset_annotations(self._preset_annotations)
             # Persist to config.json
             project_dir = data_store.get_project_dir()
             if project_dir:
@@ -153,6 +160,9 @@ class MainWindow(QMainWindow):
                 )
                 data_store.save_grading_scheme_to_config(
                     self._project_config, self._grading_scheme
+                )
+                data_store.save_preset_annotations_to_config(
+                    self._project_config, self._preset_annotations
                 )
                 data_store.save_project_config(project_dir, self._project_config)
 
@@ -320,26 +330,28 @@ class MainWindow(QMainWindow):
             )
 
     def _select_prev_student(self):
-        """Shift+Alt+Left: go to previous student."""
+        """Shift+Alt+Left: go to previous visible (filtered) student."""
         if not self._students or not self._current_student:
             return
+        visible = self._grading_panel.filtered_students()
         idx = next(
-            (i for i, s in enumerate(self._students)
+            (i for i, s in enumerate(visible)
              if s.student_number == self._current_student.student_number), -1
         )
         if idx > 0:
-            self._select_student(self._students[idx - 1])
+            self._select_student(visible[idx - 1])
 
     def _select_next_student(self):
-        """Shift+Alt+Right: go to next student."""
+        """Shift+Alt+Right: go to next visible (filtered) student."""
         if not self._students or not self._current_student:
             return
+        visible = self._grading_panel.filtered_students()
         idx = next(
-            (i for i, s in enumerate(self._students)
+            (i for i, s in enumerate(visible)
              if s.student_number == self._current_student.student_number), -1
         )
-        if 0 <= idx < len(self._students) - 1:
-            self._select_student(self._students[idx + 1])
+        if 0 <= idx < len(visible) - 1:
+            self._select_student(visible[idx + 1])
 
 
 def main():
