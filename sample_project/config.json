@@ -5,6 +5,13 @@
     "rounding": 0.5,
     "score_total": null
   },
+  "preset_annotations": [
+    "Justification...",
+    "Rédaction...",
+    "Hypothèses",
+    "Notation incorrecte",
+    "Cohérent avec erreur précédente"
+  ],
   "exercises": [
     {
       "name": "Exercise 1",

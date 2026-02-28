@@ -4,9 +4,10 @@ Combines:
  - Grading settings (max note, rounding, score total)
  - Export filename template
  - Grading scheme editor (exercises + subquestions)
+ - Preset annotations editor
  - Debug mode checkbox
 """
-from typing import Optional
+from typing import List, Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -19,6 +20,8 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QTabWidget,
@@ -42,6 +45,7 @@ class SettingsDialog(QDialog):
         grading_scheme: GradingScheme,
         exam_max_points: float,
         export_template: str,
+        preset_annotations: Optional[List[str]] = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -59,6 +63,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._build_grading_tab(grading_settings), "Grading")
         tabs.addTab(self._build_export_tab(grading_settings, export_template), "Export")
         tabs.addTab(self._build_scheme_tab(grading_scheme), "Grading Scheme")
+        tabs.addTab(self._build_presets_tab(preset_annotations or []), "Preset Annotations")
         tabs.addTab(self._build_advanced_tab(grading_settings), "Advanced")
 
         buttons = QDialogButtonBox(
@@ -199,6 +204,85 @@ class SettingsDialog(QDialog):
 
         layout.addStretch()
         return w
+
+    def _build_presets_tab(self, presets: List[str]) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        hint = QLabel(
+            "Preset text annotations available via the Stamp tool (S). "
+            "Double-click to edit, use buttons to add, remove, or reorder."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #555;")
+        layout.addWidget(hint)
+        layout.addSpacing(4)
+
+        self._preset_list = QListWidget()
+        self._preset_list.setAlternatingRowColors(True)
+        for text in presets:
+            item = QListWidgetItem(text)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+            self._preset_list.addItem(item)
+        layout.addWidget(self._preset_list, stretch=1)
+
+        btn_row = QHBoxLayout()
+        layout.addLayout(btn_row)
+
+        add_btn = QPushButton("Add")
+        add_btn.setToolTip("Add a new preset annotation")
+        add_btn.clicked.connect(self._on_add_preset)
+        btn_row.addWidget(add_btn)
+
+        del_btn = QPushButton("Delete")
+        del_btn.setToolTip("Delete the selected preset")
+        del_btn.clicked.connect(self._on_delete_preset)
+        btn_row.addWidget(del_btn)
+
+        btn_row.addStretch()
+
+        up_btn = QPushButton("▲")
+        up_btn.setFixedWidth(32)
+        up_btn.setToolTip("Move selected preset up")
+        up_btn.clicked.connect(self._on_preset_up)
+        btn_row.addWidget(up_btn)
+
+        down_btn = QPushButton("▼")
+        down_btn.setFixedWidth(32)
+        down_btn.setToolTip("Move selected preset down")
+        down_btn.clicked.connect(self._on_preset_down)
+        btn_row.addWidget(down_btn)
+
+        return w
+
+    # ── Preset tab helpers ────────────────────────────────────────────────────
+
+    def _on_add_preset(self):
+        item = QListWidgetItem("New preset")
+        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+        self._preset_list.addItem(item)
+        self._preset_list.setCurrentItem(item)
+        self._preset_list.editItem(item)
+
+    def _on_delete_preset(self):
+        row = self._preset_list.currentRow()
+        if row >= 0:
+            self._preset_list.takeItem(row)
+
+    def _on_preset_up(self):
+        row = self._preset_list.currentRow()
+        if row > 0:
+            item = self._preset_list.takeItem(row)
+            self._preset_list.insertItem(row - 1, item)
+            self._preset_list.setCurrentRow(row - 1)
+
+    def _on_preset_down(self):
+        row = self._preset_list.currentRow()
+        if 0 <= row < self._preset_list.count() - 1:
+            item = self._preset_list.takeItem(row)
+            self._preset_list.insertItem(row + 1, item)
+            self._preset_list.setCurrentRow(row + 1)
 
     def _build_scheme_tab(self, scheme: GradingScheme) -> QWidget:
         w = QWidget()
@@ -431,3 +515,10 @@ class SettingsDialog(QDialog):
                 subquestions.append(Subquestion(name=sq_name, max_points=sq_pts))
             exercises.append(Exercise(name=ex_name, subquestions=subquestions))
         return GradingScheme(exercises=exercises)
+
+    def get_preset_annotations(self) -> List[str]:
+        return [
+            self._preset_list.item(i).text().strip()
+            for i in range(self._preset_list.count())
+            if self._preset_list.item(i).text().strip()
+        ]

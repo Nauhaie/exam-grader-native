@@ -6,6 +6,7 @@ from PySide6.QtGui import QColor, QFont, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QComboBox,
     QHBoxLayout,
     QHeaderView,
     QLineEdit,
@@ -20,6 +21,8 @@ from PySide6.QtWidgets import (
 )
 
 from models import GradingScheme, GradingSettings, Student, Subquestion
+
+import data_store
 
 _HEADER_ROWS = 3        # exercise row · subquestion row · max-points row
 _FROZEN_COLS = 2        # Student, Number columns are always visible
@@ -88,9 +91,15 @@ class GradingPanel(QWidget):
         # ── Top bar: search + extra-fields toggle ─────────────────────────────
         top = QHBoxLayout()
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Filter students by name or number…")
+        self._search.setPlaceholderText("Filter students…")
         self._search.textChanged.connect(self._rebuild_table)
         top.addWidget(self._search)
+
+        self._search_mode = QComboBox()
+        self._search_mode.addItems(["Name + ID", "Name", "ID", "Annotations"])
+        self._search_mode.setToolTip("Choose which field to search in")
+        self._search_mode.currentIndexChanged.connect(self._rebuild_table)
+        top.addWidget(self._search_mode)
 
         clear_btn = QPushButton("✕")
         clear_btn.setToolTip("Clear filter")
@@ -202,6 +211,10 @@ class GradingPanel(QWidget):
         """Return the sum of all subquestion max points."""
         return self._max_total()
 
+    def filtered_students(self) -> List[Student]:
+        """Return the list of students currently visible after filtering."""
+        return self._filtered_students()
+
     # ── Internal ──────────────────────────────────────────────────────────────
 
     def _extra_field_names(self) -> List[str]:
@@ -261,13 +274,27 @@ class GradingPanel(QWidget):
         text = self._search.text().strip().lower()
         if not text:
             return list(self._students)
-        return [
-            s for s in self._students
-            if text in s.last_name.lower()
-            or text in s.first_name.lower()
-            or text in s.student_number.lower()
-            or any(text in v.lower() for v in s.extra_fields.values())
-        ]
+        mode = self._search_mode.currentText()
+        result = []
+        for s in self._students:
+            if mode == "Name + ID":
+                if (text in s.last_name.lower()
+                        or text in s.first_name.lower()
+                        or text in s.student_number.lower()
+                        or any(text in v.lower() for v in s.extra_fields.values())):
+                    result.append(s)
+            elif mode == "Name":
+                if (text in s.last_name.lower()
+                        or text in s.first_name.lower()):
+                    result.append(s)
+            elif mode == "ID":
+                if text in s.student_number.lower():
+                    result.append(s)
+            elif mode == "Annotations":
+                anns = data_store.load_annotations(s.student_number)
+                if any(a.text and text in a.text.lower() for a in anns):
+                    result.append(s)
+        return result
 
     def _max_total(self) -> float:
         return sum(sq.max_points for sq in self._subquestions)

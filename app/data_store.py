@@ -189,6 +189,16 @@ def save_grading_scheme_to_config(config_data: dict, scheme: GradingScheme) -> N
     ]
 
 
+def load_preset_annotations(config_data: dict) -> List[str]:
+    """Return the list of preset annotation texts from the config."""
+    return list(config_data.get("preset_annotations", []))
+
+
+def save_preset_annotations_to_config(config_data: dict, presets: List[str]) -> None:
+    """Write *presets* into *config_data* in-place."""
+    config_data["preset_annotations"] = list(presets)
+
+
 # ── Students CSV ──────────────────────────────────────────────────────────────
 
 def load_students(csv_path: str) -> List[Student]:
