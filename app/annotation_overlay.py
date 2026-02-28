@@ -239,11 +239,13 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
         painter.fillRect(cx + bw - hs, cy + bh - hs, hs, hs, QColor(70, 130, 230, 200))
 
     elif ann.type == "line" and ann.x2 is not None and ann.y2 is not None:
-        painter.setPen(QPen(_RED, stroke))
+        painter.setPen(QPen(_RED, stroke, Qt.PenStyle.SolidLine,
+                            Qt.PenCapStyle.RoundCap))
         painter.drawLine(cx, cy, int(ann.x2 * w), int(ann.y2 * h))
 
     elif ann.type == "arrow" and ann.x2 is not None and ann.y2 is not None:
-        painter.setPen(QPen(_RED, stroke))
+        painter.setPen(QPen(_RED, stroke, Qt.PenStyle.SolidLine,
+                            Qt.PenCapStyle.RoundCap))
         _draw_arrow(painter, cx, cy, int(ann.x2 * w), int(ann.y2 * h), s)
 
     elif ann.type == "circle" and ann.x2 is not None and ann.y2 is not None:
@@ -262,7 +264,8 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
         x2 = int(ann.x2 * w)
         y2 = int(ann.y2 * h)
         # Draw the two diagonals of the rectangle (no rectangle border)
-        painter.setPen(QPen(_RED, thick))
+        painter.setPen(QPen(_RED, thick, Qt.PenStyle.SolidLine,
+                            Qt.PenCapStyle.RoundCap))
         painter.drawLine(cx, cy, x2, y2)
         painter.drawLine(x2, cy, cx, y2)
         # Draw small blue handles at the 4 corners

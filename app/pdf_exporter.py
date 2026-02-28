@@ -203,7 +203,8 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                             p1 = to_draw(cx_v, cy_v)
                             p2 = to_draw(ann.x2 * pw, ann.y2 * ph)
                             _log(f"       draw_line : {p1} → {p2}")
-                            page.draw_line(p1, p2, color=_RED, width=2, stroke_opacity=0.8)
+                            page.draw_line(p1, p2, color=_RED, width=2, lineCap=1,
+                                           stroke_opacity=0.8)
                         elif ann.type == "arrow" and ann.x2 is not None and ann.y2 is not None:
                             p1 = to_draw(cx_v, cy_v)
                             p2 = to_draw(ann.x2 * pw, ann.y2 * ph)
@@ -221,8 +222,10 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                             p3 = to_draw(ann.x2 * pw, cy_v)
                             p4 = to_draw(cx_v, ann.y2 * ph)
                             _log(f"       draw_rectcross : {p1}→{p2}, {p3}→{p4}")
-                            page.draw_line(p1, p2, color=_RED, width=2.5, stroke_opacity=0.8)
-                            page.draw_line(p3, p4, color=_RED, width=2.5, stroke_opacity=0.8)
+                            page.draw_line(p1, p2, color=_RED, width=2.5, lineCap=1,
+                                           stroke_opacity=0.8)
+                            page.draw_line(p3, p4, color=_RED, width=2.5, lineCap=1,
+                                           stroke_opacity=0.8)
 
                     _log("")
 
@@ -301,7 +304,8 @@ def _draw_tilde(page, cx_v: float, cy_v: float, rot: int,
     shape = page.new_shape()
     shape.draw_bezier(p0, cp1, cp2, p1)
     shape.draw_bezier(p1, cp3, cp4, p2)
-    shape.finish(color=_ORANGE, width=2.5, closePath=False, stroke_opacity=0.8)
+    shape.finish(color=_ORANGE, width=2.5, lineCap=1, lineJoin=1,
+                 closePath=False, stroke_opacity=0.8)
     shape.commit()
 
 
@@ -423,7 +427,7 @@ def _text_rect(cx_v: float, cy_v: float, bw: float, bh: float,
 
 def _draw_arrow(page, x1: float, y1: float, x2: float, y2: float):
     """Draw a line with a filled arrowhead at (x2, y2) – coords in draw space."""
-    page.draw_line((x1, y1), (x2, y2), color=_RED, width=2, stroke_opacity=0.8)
+    page.draw_line((x1, y1), (x2, y2), color=_RED, width=2, lineCap=1, stroke_opacity=0.8)
     if x1 == x2 and y1 == y2:
         return
     angle = math.atan2(y2 - y1, x2 - x1)

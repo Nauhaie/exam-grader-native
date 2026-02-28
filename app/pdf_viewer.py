@@ -505,15 +505,21 @@ class PDFViewerPanel(QWidget):
         self._next_btn.setEnabled(self._current_page < n - 1)
 
         page = self._doc[self._current_page]
+        # Scale by the device pixel ratio so Retina/HiDPI screens get a
+        # sharp raster instead of an upscaled blurry image.
+        dpr = self.devicePixelRatio()
         data_store.dbg(f"Rendering page {self._current_page + 1}/{n} at zoom {self._zoom:.2f} "
+                       f"dpr {dpr:.1f} "
                        f"(page size: {page.rect.width:.0f}×{page.rect.height:.0f} pt)")
         # page.rect is already rotation-aware in PyMuPDF, so landscape A3 pages
         # get their correct (wide) dimensions here automatically.
-        mat = fitz.Matrix(self._zoom, self._zoom)
+        mat = fitz.Matrix(self._zoom * dpr, self._zoom * dpr)
         pix = page.get_pixmap(matrix=mat, alpha=False)
         img = QImage(pix.samples, pix.width, pix.height,
                      pix.stride, QImage.Format.Format_RGB888)
-        self._raw_pixmap = QPixmap.fromImage(img)
+        raw = QPixmap.fromImage(img)
+        raw.setDevicePixelRatio(dpr)
+        self._raw_pixmap = raw
         self._zoom_label.setText(f"{int(self._zoom * 100)}%")
         self._rebuild_base_and_display()
 
