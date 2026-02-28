@@ -12,6 +12,7 @@ via ``to_draw()`` before calling any draw method.
 """
 import math
 import os
+from dataclasses import replace
 from typing import Callable, List, Optional, Tuple
 
 import fitz
@@ -247,13 +248,7 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                     if debug:
                         print("[bake] cover page inserted at page 0")
                     # Shift annotation page indices since we prepended a page
-                    annotations = [
-                        Annotation(
-                            page=a.page + 1, type=a.type, x=a.x, y=a.y,
-                            text=a.text, x2=a.x2, y2=a.y2, width=a.width,
-                        )
-                        for a in annotations
-                    ]
+                    annotations = [replace(a, page=a.page + 1) for a in annotations]
 
                 for page_idx in range(doc.page_count):
                     page = doc[page_idx]
