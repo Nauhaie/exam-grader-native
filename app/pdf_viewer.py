@@ -2,27 +2,21 @@
 
 PDF rendering backend
 ---------------------
-Currently uses **PyMuPDF (fitz)**, which wraps the MuPDF C library.
-MuPDF is the standard high-quality renderer used with Qt-based apps.
+Uses **QPdfDocument** (built into Qt 6.4+) for rasterisation.  This is a
+zero-dependency renderer bundled with PySide6 that provides threaded tile
+rendering and good HiDPI performance without an external C library.
 
-Potential faster alternatives (for future evaluation):
- * **QPdfDocument** (built into Qt 6.4+) — zero-dependency, threaded tile
-   rendering via ``QPdfDocument.render()``.  No extra install, but lacks
-   some MuPDF features (annotations, text extraction).
- * **Poppler (python-poppler-qt6)** — wraps the Poppler C++ library used by
-   Evince/Okular.  Comparable quality to MuPDF; may be faster for certain
-   page layouts.
- * **pdfium (pypdfium2)** — wraps Google's PDFium (used in Chrome).  Very
-   fast rasterisation, especially on large or complex pages.
+PDF *export* (baking annotations into a new file) still relies on PyMuPDF
+(fitz) in ``pdf_exporter.py``, since QPdfDocument is read-only.
 """
 import math
 import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-import fitz  # pymupdf
-from PySide6.QtCore import QObject, QEvent, QPoint, QRect, Qt, QTimer, Signal
-from PySide6.QtGui import QCursor, QFont, QImage, QPixmap
+from PySide6.QtCore import QObject, QEvent, QPoint, QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QCursor, QFont, QImage, QPainter, QPixmap
+from PySide6.QtPdf import QPdfDocument
 from PySide6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QPlainTextEdit, QPushButton, QScrollArea,
@@ -328,7 +322,7 @@ class PDFViewerPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._pdf_path: Optional[str] = None
-        self._doc: Optional[fitz.Document] = None
+        self._doc: Optional[QPdfDocument] = None
         self._current_page: int = 0
         self._zoom: float = 1.2
         self._annotations: List[Annotation] = []
@@ -462,8 +456,9 @@ class PDFViewerPanel(QWidget):
         self._invalidate_cache()
         if pdf_path and os.path.isfile(pdf_path):
             self._pdf_path = pdf_path
-            self._doc = fitz.open(pdf_path)
-            data_store.dbg(f"PDF loaded: {pdf_path} ({self._doc.page_count} page(s))")
+            self._doc = QPdfDocument(self)
+            self._doc.load(pdf_path)
+            data_store.dbg(f"PDF loaded: {pdf_path} ({self._doc.pageCount()} page(s))")
             self._render_page()
         else:
             self._pdf_path = None
@@ -531,11 +526,11 @@ class PDFViewerPanel(QWidget):
         self._next_btn.setEnabled(False)
 
     def _render_page(self):
-        """Full re-render: rasterise via fitz (slow), then bake annotations."""
+        """Full re-render: rasterise via QPdfDocument, then bake annotations."""
         if not self._doc:
             self._show_placeholder()
             return
-        n = self._doc.page_count
+        n = self._doc.pageCount()
         self._page_counter.setText(f"Page {self._current_page + 1} / {n}")
         self._prev_btn.setEnabled(self._current_page > 0)
         self._next_btn.setEnabled(self._current_page < n - 1)
@@ -562,14 +557,23 @@ class PDFViewerPanel(QWidget):
 
     def _render_page_pixmap(self, page_idx: int, dpr: float) -> QPixmap:
         """Rasterise a single page and return a QPixmap with the given DPR."""
-        page = self._doc[page_idx]
-        data_store.dbg(f"Rendering page {page_idx + 1}/{self._doc.page_count} "
+        page_size = self._doc.pagePointSize(page_idx)
+        data_store.dbg(f"Rendering page {page_idx + 1}/{self._doc.pageCount()} "
                        f"at zoom {self._zoom:.2f} dpr {dpr:.1f} "
-                       f"(page size: {page.rect.width:.0f}×{page.rect.height:.0f} pt)")
-        mat = fitz.Matrix(self._zoom * dpr, self._zoom * dpr)
-        pix = page.get_pixmap(matrix=mat, alpha=False)
-        img = QImage(pix.samples, pix.width, pix.height,
-                     pix.stride, QImage.Format.Format_RGB888)
+                       f"(page size: {page_size.width():.0f}×{page_size.height():.0f} pt)")
+        w = max(1, int(page_size.width() * self._zoom * dpr))
+        h = max(1, int(page_size.height() * self._zoom * dpr))
+        img = self._doc.render(page_idx, QSize(w, h))
+        # QPdfDocument renders with an alpha channel; composite onto white so
+        # the result matches the opaque RGB output that the rest of the
+        # pipeline (annotation overlay, display) expects.
+        if img.hasAlphaChannel():
+            opaque = QImage(img.size(), QImage.Format.Format_RGB32)
+            opaque.fill(Qt.GlobalColor.white)
+            p = QPainter(opaque)
+            p.drawImage(0, 0, img)
+            p.end()
+            img = opaque
         raw = QPixmap.fromImage(img)
         raw.setDevicePixelRatio(dpr)
         return raw
@@ -588,7 +592,7 @@ class PDFViewerPanel(QWidget):
             self._cache_zoom = self._zoom
             self._cache_dpr = dpr
         for idx in (self._current_page - 1, self._current_page + 1):
-            if 0 <= idx < self._doc.page_count and idx not in self._page_cache:
+            if 0 <= idx < self._doc.pageCount() and idx not in self._page_cache:
                 self._page_cache[idx] = self._render_page_pixmap(idx, dpr)
 
     def _rebuild_base_and_display(self):
@@ -1150,7 +1154,7 @@ class PDFViewerPanel(QWidget):
             self._render_page()
 
     def _next_page(self):
-        if self._doc and self._current_page < self._doc.page_count - 1:
+        if self._doc and self._current_page < self._doc.pageCount() - 1:
             self._current_page += 1
             data_store.dbg(f"Navigating to next page: {self._current_page + 1}")
             self._line_start = None
