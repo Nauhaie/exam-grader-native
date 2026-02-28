@@ -671,9 +671,9 @@ class PDFViewerPanel(QWidget):
     def _set_page_cursor(self, shape):
         """Set the cursor on the page label.
 
-        Hover events are suppressed on both ClickableLabel and the scroll
-        viewport (see ClickableLabel.event and eventFilter) so Qt's
-        internal event processing can no longer reset this cursor.
+        Hover events are suppressed on both ClickableLabel (via its event()
+        override) and the scroll viewport (via PDFViewerPanel.eventFilter)
+        so Qt's internal event processing can no longer reset this cursor.
         """
         self._page_label.setCursor(shape)
 
