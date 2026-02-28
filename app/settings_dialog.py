@@ -187,8 +187,10 @@ class SettingsDialog(QDialog):
         layout.addWidget(self._debug_cb)
 
         debug_hint = QLabel(
-            "When enabled, detailed messages are printed to the terminal during "
-            "export and a <tt>.log</tt> file is written next to each annotated PDF."
+            "When enabled, detailed messages are printed to the terminal "
+            "throughout the application — when loading PDFs, project data, "
+            "annotations, navigating pages, switching students, exporting, etc. "
+            "A <tt>.log</tt> file is also written next to each exported annotated PDF."
         )
         debug_hint.setWordWrap(True)
         debug_hint.setStyleSheet("color: #555;")

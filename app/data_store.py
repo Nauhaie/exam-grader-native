@@ -6,6 +6,25 @@ from typing import Dict, List, Optional
 from models import Annotation, Exercise, GradingScheme, GradingSettings, Student, Subquestion
 
 
+# ── Debug logging ─────────────────────────────────────────────────────────────
+
+_debug: bool = False
+
+
+def set_debug(enabled: bool) -> None:
+    """Enable or disable debug logging to the terminal."""
+    global _debug
+    _debug = enabled
+    if enabled:
+        print("[DEBUG] Debug mode enabled")
+
+
+def dbg(msg: str) -> None:
+    """Print a debug message to the terminal if debug mode is on."""
+    if _debug:
+        print(f"[DEBUG] {msg}")
+
+
 # ── App-level session config (persists which project dir was last opened) ─────
 
 _APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -32,6 +51,12 @@ def set_project_dir(project_dir: str) -> None:
     ANNOTATIONS_DIR = os.path.join(DATA_DIR, "annotations")
     EXPORT_DIR = os.path.join(_active_project_dir, "export")
     ANNOTATED_EXPORT_DIR = os.path.join(EXPORT_DIR, "annotated")
+    dbg(f"Project dir set to: {_active_project_dir}")
+    dbg(f"  DATA_DIR         = {DATA_DIR}")
+    dbg(f"  GRADES_PATH      = {GRADES_PATH}")
+    dbg(f"  ANNOTATIONS_DIR  = {ANNOTATIONS_DIR}")
+    dbg(f"  EXPORT_DIR       = {EXPORT_DIR}")
+    dbg(f"  ANNOTATED_EXPORT = {ANNOTATED_EXPORT_DIR}")
 
 
 def get_project_dir() -> Optional[str]:
@@ -53,15 +78,20 @@ def ensure_data_dirs():
     os.makedirs(ANNOTATIONS_DIR, exist_ok=True)
     os.makedirs(EXPORT_DIR, exist_ok=True)
     os.makedirs(ANNOTATED_EXPORT_DIR, exist_ok=True)
+    dbg(f"Ensured data dirs exist under {_active_project_dir}")
 
 
 # ── Session config ────────────────────────────────────────────────────────────
 
 def load_session_config() -> Optional[dict]:
+    dbg(f"Loading session config from {SESSION_CONFIG_PATH}")
     if not os.path.exists(SESSION_CONFIG_PATH):
+        dbg("  Session config file not found")
         return None
     with open(SESSION_CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+        config = json.load(f)
+    dbg(f"  Session config loaded: {config}")
+    return config
 
 
 def save_session_config(project_dir: str):
@@ -69,6 +99,7 @@ def save_session_config(project_dir: str):
     config = {"project_dir": os.path.abspath(project_dir)}
     with open(SESSION_CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)
+    dbg(f"Session config saved: {config}")
 
 
 # ── Project config.json (grading scheme + export template) ───────────────────
@@ -76,8 +107,11 @@ def save_session_config(project_dir: str):
 def load_project_config(project_dir: str) -> dict:
     """Read *project_dir*/config.json and return the raw dict."""
     path = os.path.join(project_dir, "config.json")
+    dbg(f"Loading project config from {path}")
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        config = json.load(f)
+    dbg(f"  Project config keys: {list(config.keys())}")
+    return config
 
 
 def save_project_config(project_dir: str, config_data: dict) -> None:
@@ -86,6 +120,7 @@ def save_project_config(project_dir: str, config_data: dict) -> None:
     with open(path, "w", encoding="utf-8") as f:
         json.dump(config_data, f, indent=2)
         f.write("\n")
+    dbg(f"Project config saved to {path}")
 
 
 def load_grading_scheme_from_config(config_data: dict) -> GradingScheme:
@@ -97,19 +132,27 @@ def load_grading_scheme_from_config(config_data: dict) -> GradingScheme:
             for sq in ex_data.get("subquestions", [])
         ]
         exercises.append(Exercise(name=ex_data["name"], subquestions=subquestions))
-    return GradingScheme(exercises=exercises)
+    scheme = GradingScheme(exercises=exercises)
+    dbg(f"Grading scheme loaded: {len(exercises)} exercise(s), "
+        f"{sum(len(ex.subquestions) for ex in exercises)} subquestion(s)")
+    return scheme
 
 
 def load_grading_settings_from_config(config_data: dict) -> GradingSettings:
     """Build a GradingSettings from a parsed config dict."""
     gs = config_data.get("grading_settings", {})
     raw_st = gs.get("score_total")
-    return GradingSettings(
+    settings = GradingSettings(
         max_note=float(gs.get("max_note", 20.0)),
         rounding=float(gs.get("rounding", 0.5)),
         score_total=float(raw_st) if raw_st is not None else None,
         debug_mode=bool(gs.get("debug_mode", False)),
     )
+    set_debug(settings.debug_mode)
+    dbg(f"Grading settings loaded: max_note={settings.max_note}, "
+        f"rounding={settings.rounding}, score_total={settings.score_total}, "
+        f"debug_mode={settings.debug_mode}")
+    return settings
 
 
 def save_grading_settings_to_config(config_data: dict, settings: GradingSettings) -> None:
@@ -150,6 +193,7 @@ def save_grading_scheme_to_config(config_data: dict, scheme: GradingScheme) -> N
 
 def load_students(csv_path: str) -> List[Student]:
     import csv
+    dbg(f"Loading students from {csv_path}")
     _CORE = {"student_number", "last_name", "first_name"}
     students = []
     with open(csv_path, newline="", encoding="utf-8") as f:
@@ -162,6 +206,7 @@ def load_students(csv_path: str) -> List[Student]:
                 first_name=str(row["first_name"]).strip(),
                 extra_fields=extra,
             ))
+    dbg(f"  Loaded {len(students)} student(s)")
     return students
 
 
@@ -170,10 +215,14 @@ def load_students(csv_path: str) -> List[Student]:
 def load_grades() -> Dict[str, dict]:
     """Return { student_number: { subquestion_name: points } }"""
     _require_project_dir("load_grades")
+    dbg(f"Loading grades from {GRADES_PATH}")
     if not os.path.exists(GRADES_PATH):
+        dbg("  Grades file not found, returning empty")
         return {}
     with open(GRADES_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+        grades = json.load(f)
+    dbg(f"  Loaded grades for {len(grades)} student(s)")
+    return grades
 
 
 def save_grades(grades: Dict[str, dict]):
@@ -181,6 +230,7 @@ def save_grades(grades: Dict[str, dict]):
     ensure_data_dirs()
     with open(GRADES_PATH, "w", encoding="utf-8") as f:
         json.dump(grades, f, indent=2)
+    dbg(f"Grades saved for {len(grades)} student(s)")
 
 
 # ── Annotations ───────────────────────────────────────────────────────────────
@@ -188,7 +238,9 @@ def save_grades(grades: Dict[str, dict]):
 def load_annotations(student_number: str) -> List[Annotation]:
     _require_project_dir("load_annotations")
     path = os.path.join(ANNOTATIONS_DIR, f"{student_number}.json")
+    dbg(f"Loading annotations for student {student_number} from {path}")
     if not os.path.exists(path):
+        dbg("  Annotations file not found, returning empty")
         return []
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -205,6 +257,7 @@ def load_annotations(student_number: str) -> List[Annotation]:
             width=item.get("width"),
             # height is intentionally not loaded; it is always computed from content
         ))
+    dbg(f"  Loaded {len(annotations)} annotation(s)")
     return annotations
 
 
@@ -227,3 +280,4 @@ def save_annotations(student_number: str, annotations: List[Annotation]):
         data.append(item)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
+    dbg(f"Annotations saved for student {student_number}: {len(annotations)} annotation(s)")

@@ -80,6 +80,7 @@ class MainWindow(QMainWindow):
         splitter.setSizes([600, 800])
 
     def _load_session(self):
+        data_store.dbg("Loading previous session…")
         config = data_store.load_session_config()
         if config:
             project_dir = config.get("project_dir", "")
@@ -92,6 +93,7 @@ class MainWindow(QMainWindow):
                         self, "Load Error",
                         f"Could not restore previous session:\n{exc}\n\nPlease open a project."
                     )
+        data_store.dbg("No previous session found, showing setup dialog")
         self._show_setup()
 
     def _show_setup(self):
@@ -100,10 +102,12 @@ class MainWindow(QMainWindow):
             self._apply_project(dlg.project_dir())
 
     def _apply_project(self, project_dir: str):
+        data_store.dbg(f"Applying project: {project_dir}")
         data_store.set_project_dir(project_dir)
         self._project_config = data_store.load_project_config(project_dir)
         self._grading_scheme = data_store.load_grading_scheme_from_config(self._project_config)
         self._grading_settings = data_store.load_grading_settings_from_config(self._project_config)
+        data_store.set_debug(self._grading_settings.debug_mode)
         self._export_template = data_store.get_export_filename_template(self._project_config)
         self._exams_dir = os.path.join(project_dir, "exams")
         self._students = data_store.load_students(os.path.join(project_dir, "students.csv"))
@@ -111,6 +115,7 @@ class MainWindow(QMainWindow):
         data_store.ensure_data_dirs()
         self._grading_panel.set_session(self._students, self._grading_scheme, self._grades)
         self._grading_panel.set_grading_settings(self._grading_settings)
+        data_store.dbg(f"Project applied successfully: {len(self._students)} student(s)")
         if self._students:
             self._select_student(self._students[0])
 
@@ -128,6 +133,8 @@ class MainWindow(QMainWindow):
         )
         if dlg.exec():
             self._grading_settings = dlg.get_settings()
+            data_store.set_debug(self._grading_settings.debug_mode)
+            data_store.dbg("Settings updated from dialog")
             self._export_template = dlg.get_export_template()
             new_scheme = dlg.get_grading_scheme()
             self._grading_scheme = new_scheme
@@ -153,10 +160,12 @@ class MainWindow(QMainWindow):
         if (self._current_student
                 and student.student_number == self._current_student.student_number):
             return
+        data_store.dbg(f"Selecting student: {student.display_name()}")
         self._current_student = student
         self._grading_panel.set_current_student(student)
         pdf_path = os.path.join(self._exams_dir, f"{student.student_number}.pdf")
         annotations = data_store.load_annotations(student.student_number)
+        data_store.dbg(f"Loading PDF: {pdf_path}")
         self._pdf_viewer.load_pdf(pdf_path, annotations)
 
     def _on_student_selected(self, student):
