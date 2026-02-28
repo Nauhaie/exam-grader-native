@@ -190,6 +190,7 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
         pen = QPen(_GREEN, thick, Qt.PenStyle.SolidLine,
                    Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
         path = QPainterPath()
         path.moveTo(cx - rc, cy)
         path.lineTo(cx - rc // 3, cy + rc)
@@ -197,7 +198,8 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
         painter.drawPath(path)
 
     elif ann.type == "cross":
-        painter.setPen(QPen(_RED, thick))
+        painter.setPen(QPen(_RED, thick, Qt.PenStyle.SolidLine,
+                            Qt.PenCapStyle.RoundCap))
         painter.drawLine(cx - rc, cy - rc, cx + rc, cy + rc)
         painter.drawLine(cx + rc, cy - rc, cx - rc, cy + rc)
 
