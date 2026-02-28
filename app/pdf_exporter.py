@@ -203,7 +203,7 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                             p1 = to_draw(cx_v, cy_v)
                             p2 = to_draw(ann.x2 * pw, ann.y2 * ph)
                             _log(f"       draw_line : {p1} → {p2}")
-                            page.draw_line(p1, p2, color=_RED, width=2)
+                            page.draw_line(p1, p2, color=_RED, width=2, stroke_opacity=0.8)
                         elif ann.type == "arrow" and ann.x2 is not None and ann.y2 is not None:
                             p1 = to_draw(cx_v, cy_v)
                             p2 = to_draw(ann.x2 * pw, ann.y2 * ph)
@@ -214,15 +214,15 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                             ex_d, ey_d = to_draw(ann.x2 * pw, ann.y2 * ph)
                             radius = math.hypot(ex_d - cx_d, ey_d - cy_d)
                             _log(f"       draw_circle : center=({cx_d:.2f},{cy_d:.2f}) radius={radius:.2f}")
-                            page.draw_circle((cx_d, cy_d), radius, color=_RED, width=2)
+                            page.draw_circle((cx_d, cy_d), radius, color=_RED, width=2, stroke_opacity=0.8)
                         elif ann.type == "rectcross" and ann.x2 is not None and ann.y2 is not None:
                             p1 = to_draw(cx_v, cy_v)
                             p2 = to_draw(ann.x2 * pw, ann.y2 * ph)
                             p3 = to_draw(ann.x2 * pw, cy_v)
                             p4 = to_draw(cx_v, ann.y2 * ph)
                             _log(f"       draw_rectcross : {p1}→{p2}, {p3}→{p4}")
-                            page.draw_line(p1, p2, color=_RED, width=2.5)
-                            page.draw_line(p3, p4, color=_RED, width=2.5)
+                            page.draw_line(p1, p2, color=_RED, width=2.5, stroke_opacity=0.8)
+                            page.draw_line(p3, p4, color=_RED, width=2.5, stroke_opacity=0.8)
 
                     _log("")
 
@@ -270,17 +270,20 @@ def _draw_checkmark(page, cx_v: float, cy_v: float,
     p1 = to_draw(cx_v - r,     cy_v)
     p2 = to_draw(cx_v - r / 3, cy_v + r)
     p3 = to_draw(cx_v + r,     cy_v - r)
-    page.draw_line(p1, p2, color=_GREEN, width=2.5)
-    page.draw_line(p2, p3, color=_GREEN, width=2.5)
+    shape = page.new_shape()
+    shape.draw_polyline([p1, p2, p3])
+    shape.finish(color=_GREEN, width=2.5, lineCap=1, lineJoin=1,
+                 closePath=False, stroke_opacity=0.8)
+    shape.commit()
 
 
 def _draw_cross(page, cx_v: float, cy_v: float,
                 to_draw: Callable[[float, float], Tuple[float, float]]):
     r = 6
     page.draw_line(to_draw(cx_v - r, cy_v - r), to_draw(cx_v + r, cy_v + r),
-                   color=_RED, width=2.5)
+                   color=_RED, width=2.5, lineCap=1, stroke_opacity=0.8)
     page.draw_line(to_draw(cx_v + r, cy_v - r), to_draw(cx_v - r, cy_v + r),
-                   color=_RED, width=2.5)
+                   color=_RED, width=2.5, lineCap=1, stroke_opacity=0.8)
 
 
 def _draw_tilde(page, cx_v: float, cy_v: float, rot: int,
@@ -298,7 +301,7 @@ def _draw_tilde(page, cx_v: float, cy_v: float, rot: int,
     shape = page.new_shape()
     shape.draw_bezier(p0, cp1, cp2, p1)
     shape.draw_bezier(p1, cp3, cp4, p2)
-    shape.finish(color=_ORANGE, width=2.5, closePath=False)
+    shape.finish(color=_ORANGE, width=2.5, closePath=False, stroke_opacity=0.8)
     shape.commit()
 
 
@@ -420,7 +423,7 @@ def _text_rect(cx_v: float, cy_v: float, bw: float, bh: float,
 
 def _draw_arrow(page, x1: float, y1: float, x2: float, y2: float):
     """Draw a line with a filled arrowhead at (x2, y2) – coords in draw space."""
-    page.draw_line((x1, y1), (x2, y2), color=_RED, width=2)
+    page.draw_line((x1, y1), (x2, y2), color=_RED, width=2, stroke_opacity=0.8)
     if x1 == x2 and y1 == y2:
         return
     angle = math.atan2(y2 - y1, x2 - x1)
@@ -434,5 +437,5 @@ def _draw_arrow(page, x1: float, y1: float, x2: float, y2: float):
     ]
     shape = page.new_shape()
     shape.draw_polyline(pts + [pts[0]])
-    shape.finish(fill=_RED, color=_RED, closePath=True)
+    shape.finish(fill=_RED, color=_RED, closePath=True, fill_opacity=0.8, stroke_opacity=0.8)
     shape.commit()

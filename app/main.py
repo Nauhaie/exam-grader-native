@@ -1,6 +1,7 @@
 """Main entry point for Exam Grader native app."""
 import csv
 import os
+import subprocess
 import sys
 
 import openpyxl
@@ -324,7 +325,12 @@ class MainWindow(QMainWindow):
         msg = f"Exported {exported} annotated PDF(s) to:\n{output_dir}"
         if skipped:
             msg += f"\n({skipped} student(s) skipped — PDF not found)"
-        QMessageBox.information(self, "Export", msg)
+        dlg = QMessageBox(QMessageBox.Icon.Information, "Export", msg, parent=self)
+        open_btn = dlg.addButton("Open Folder", QMessageBox.ButtonRole.ActionRole)
+        dlg.addButton(QMessageBox.StandardButton.Ok)
+        dlg.exec()
+        if dlg.clickedButton() is open_btn:
+            _open_folder(output_dir)
 
     def _on_jump_requested(self):
         """'P' key: jump to the grading row for the current student."""
@@ -356,6 +362,21 @@ class MainWindow(QMainWindow):
         )
         if 0 <= idx < len(visible) - 1:
             self._select_student(visible[idx + 1])
+
+
+def _open_folder(path: str) -> None:
+    """Open *path* in the platform's file manager (Finder, Explorer, etc.)."""
+    if not os.path.isdir(path):
+        return
+    try:
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", path])
+        elif sys.platform == "win32":
+            os.startfile(path)  # type: ignore[attr-defined]
+        else:
+            subprocess.Popen(["xdg-open", path])
+    except Exception:
+        pass
 
 
 def main():
