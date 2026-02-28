@@ -57,14 +57,14 @@ class SettingsDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        tabs = QTabWidget()
-        layout.addWidget(tabs)
+        self._tabs = QTabWidget()
+        layout.addWidget(self._tabs)
 
-        tabs.addTab(self._build_grading_tab(grading_settings), "Grading")
-        tabs.addTab(self._build_export_tab(grading_settings, export_template), "Export")
-        tabs.addTab(self._build_scheme_tab(grading_scheme), "Grading Scheme")
-        tabs.addTab(self._build_presets_tab(preset_annotations or []), "Preset Annotations")
-        tabs.addTab(self._build_advanced_tab(grading_settings), "Advanced")
+        self._tabs.addTab(self._build_grading_tab(grading_settings), "Grading")
+        self._tabs.addTab(self._build_export_tab(grading_settings, export_template), "Export")
+        self._tabs.addTab(self._build_scheme_tab(grading_scheme), "Grading Scheme")
+        self._tabs.addTab(self._build_presets_tab(preset_annotations or []), "Preset Annotations")
+        self._tabs.addTab(self._build_advanced_tab(grading_settings), "Advanced")
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -72,6 +72,12 @@ class SettingsDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    # ── Public helpers ───────────────────────────────────────────────────────
+
+    def select_tab(self, index: int):
+        """Activate the tab at *index*."""
+        self._tabs.setCurrentIndex(index)
 
     # ── Tab builders ──────────────────────────────────────────────────────────
 

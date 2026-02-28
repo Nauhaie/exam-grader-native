@@ -23,8 +23,9 @@ _TEXT_PAD = 3
 _RESIZE_HANDLE = 8          # side length (pt) of the resize-handle square
 _TEXT_WRAP_MAX_H = 10_000   # generous max-height for word-wrap bound calculation
 
-_RED    = QColor(204, 20, 20)    # colour for lines, arrows, circles
-_ORANGE = QColor(255, 140, 0)    # colour for tilde (~) annotation
+_RED    = QColor(204, 20, 20, 204)   # colour for lines, arrows, circles (80 % opaque)
+_GREEN  = QColor(0, 153, 0, 204)    # colour for checkmarks            (80 % opaque)
+_ORANGE = QColor(255, 140, 0)       # colour for tilde (~) annotation
 
 # Long side of A4 in PDF points (= pixels at 72 dpi, zoom 1.0).
 # Used as the reference length so annotation sizes are physically consistent
@@ -186,12 +187,12 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
     thick = max(2, round(3 * s))      # pen width for checkmark / cross (thicker)
 
     if ann.type == "checkmark":
-        painter.setPen(QPen(QColor("green"), thick))
+        painter.setPen(QPen(_GREEN, thick))
         painter.drawLine(cx - rc, cy, cx - rc // 3, cy + rc)
         painter.drawLine(cx - rc // 3, cy + rc, cx + rc, cy - rc)
 
     elif ann.type == "cross":
-        painter.setPen(QPen(QColor("red"), thick))
+        painter.setPen(QPen(_RED, thick))
         painter.drawLine(cx - rc, cy - rc, cx + rc, cy + rc)
         painter.drawLine(cx + rc, cy - rc, cx - rc, cy + rc)
 
