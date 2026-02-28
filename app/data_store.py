@@ -15,7 +15,7 @@ try:
     import fitz as _fitz
     _fitz.TOOLS.mupdf_display_errors(False)
     _fitz.TOOLS.mupdf_display_warnings(False)
-except Exception:
+except (ImportError, AttributeError):
     pass
 
 
@@ -31,7 +31,7 @@ def set_debug(enabled: bool) -> None:
         import fitz
         fitz.TOOLS.mupdf_display_errors(enabled)
         fitz.TOOLS.mupdf_display_warnings(enabled)
-    except Exception:
+    except (ImportError, AttributeError):
         pass
     if enabled:
         print("[DEBUG] Debug mode enabled")
