@@ -250,7 +250,7 @@ class MainWindow(QMainWindow):
         dlg.addButton(QMessageBox.StandardButton.Ok)
         dlg.exec()
         if dlg.clickedButton() is open_btn:
-            _open_file(path)
+            _open_path(path)
 
     def _export_xlsx(self):
         if not self._grading_scheme or not self._students:
@@ -275,7 +275,7 @@ class MainWindow(QMainWindow):
         dlg.addButton(QMessageBox.StandardButton.Ok)
         dlg.exec()
         if dlg.clickedButton() is open_btn:
-            _open_file(path)
+            _open_path(path)
 
     def _export_annotated_pdfs(self):
         if not self._students:
@@ -399,7 +399,7 @@ class MainWindow(QMainWindow):
         open_btn = btn_box.addButton("Open Folder", QDialogButtonBox.ButtonRole.ActionRole)
         ok_btn = btn_box.addButton(QDialogButtonBox.StandardButton.Ok)
         ok_btn.setDefault(True)
-        open_btn.clicked.connect(lambda: _open_folder(output_dir))
+        open_btn.clicked.connect(lambda: _open_path(output_dir))
         ok_btn.clicked.connect(dlg.accept)
         dlg.exec()
 
@@ -435,24 +435,9 @@ class MainWindow(QMainWindow):
             self._select_student(visible[idx + 1])
 
 
-def _open_folder(path: str) -> None:
-    """Open *path* in the platform's file manager (Finder, Explorer, etc.)."""
-    if not os.path.isdir(path):
-        return
-    try:
-        if sys.platform == "darwin":
-            subprocess.Popen(["open", path])
-        elif sys.platform == "win32":
-            os.startfile(path)  # type: ignore[attr-defined]
-        else:
-            subprocess.Popen(["xdg-open", path])
-    except Exception:
-        pass
-
-
-def _open_file(path: str) -> None:
-    """Open *path* with the platform's default application."""
-    if not os.path.isfile(path):
+def _open_path(path: str) -> None:
+    """Open *path* with the platform's default handler (file or directory)."""
+    if not os.path.exists(path):
         return
     try:
         if sys.platform == "darwin":

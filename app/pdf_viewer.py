@@ -402,7 +402,7 @@ class PDFViewerPanel(QWidget):
         self._prev_btn = QPushButton("◀")
         self._prev_btn.setToolTip("Previous page")
         self._prev_btn.setFixedWidth(32)
-        self._prev_btn.clicked.connect(self._prev_page)
+        self._prev_btn.clicked.connect(self.prev_page)
         tb.addWidget(self._prev_btn)
 
         self._page_counter = QLabel("Page 1 / 1")
@@ -413,7 +413,7 @@ class PDFViewerPanel(QWidget):
         self._next_btn = QPushButton("▶")
         self._next_btn.setToolTip("Next page")
         self._next_btn.setFixedWidth(32)
-        self._next_btn.clicked.connect(self._next_page)
+        self._next_btn.clicked.connect(self.next_page)
         tb.addWidget(self._next_btn)
 
         tb.addStretch()
@@ -533,12 +533,20 @@ class PDFViewerPanel(QWidget):
                 self._render_page()
 
     def prev_page(self):
-        """Navigate to the previous page (public, also used by shortcuts)."""
-        self._prev_page()
+        """Navigate to the previous page."""
+        if self._doc and self._current_page > 0:
+            self._current_page -= 1
+            data_store.dbg(f"Navigating to previous page: {self._current_page + 1}")
+            self._reset_interaction()
+            self._render_page()
 
     def next_page(self):
-        """Navigate to the next page (public, also used by shortcuts)."""
-        self._next_page()
+        """Navigate to the next page."""
+        if self._doc and self._current_page < self._doc.page_count - 1:
+            self._current_page += 1
+            data_store.dbg(f"Navigating to next page: {self._current_page + 1}")
+            self._reset_interaction()
+            self._render_page()
 
     # ── Rendering ─────────────────────────────────────────────────────────────
 
@@ -661,19 +669,17 @@ class PDFViewerPanel(QWidget):
     # ── Mouse handlers ────────────────────────────────────────────────────────
 
     def _set_page_cursor(self, shape):
-        """Set the cursor on both the page label and the viewport.
+        """Set the cursor on the page label.
 
-        Setting on both widgets ensures the cursor persists even when Qt's
-        internal event processing (e.g. in QScrollArea / QLabel) resets the
-        child widget's cursor — the viewport cursor acts as a fallback.
+        Hover events are suppressed on both ClickableLabel and the scroll
+        viewport (see ClickableLabel.event and eventFilter) so Qt's
+        internal event processing can no longer reset this cursor.
         """
         self._page_label.setCursor(shape)
-        self._scroll.viewport().setCursor(shape)
 
     def _unset_page_cursor(self):
-        """Restore the default cursor on both the page label and the viewport."""
+        """Restore the default cursor on the page label."""
         self._page_label.unsetCursor()
-        self._scroll.viewport().unsetCursor()
 
     def _on_page_left(self):
         """Mouse left the page label area — restore default cursor."""
@@ -1224,25 +1230,12 @@ class PDFViewerPanel(QWidget):
 
     # ── Navigation / zoom ─────────────────────────────────────────────────────
 
-    def _prev_page(self):
-        if self._doc and self._current_page > 0:
-            self._current_page -= 1
-            data_store.dbg(f"Navigating to previous page: {self._current_page + 1}")
-            self._line_start = None
-            self._preview_pos = None
-            self._drag = None
-            self._cancel_inline_editor()
-            self._render_page()
-
-    def _next_page(self):
-        if self._doc and self._current_page < self._doc.page_count - 1:
-            self._current_page += 1
-            data_store.dbg(f"Navigating to next page: {self._current_page + 1}")
-            self._line_start = None
-            self._preview_pos = None
-            self._drag = None
-            self._cancel_inline_editor()
-            self._render_page()
+    def _reset_interaction(self):
+        """Clear in-progress interaction state (used on page changes)."""
+        self._line_start = None
+        self._preview_pos = None
+        self._drag = None
+        self._cancel_inline_editor()
 
     def _on_tool_clicked(self, tool: str, checked: bool):
         self.set_active_tool(tool if checked else TOOL_NONE)
@@ -1275,25 +1268,23 @@ class PDFViewerPanel(QWidget):
                     return True
         return super().eventFilter(obj, event)
 
-    def _apply_zoom_factor(self, factor: float):
-        """Multiply current zoom by *factor*, clamped to [0.5, 3.0]."""
-        new_zoom = max(0.5, min(3.0, self._zoom * factor))
+    def _apply_zoom(self, new_zoom: float):
+        """Set zoom to *new_zoom* (clamped to [0.5, 3.0]) and re-render."""
+        new_zoom = max(0.5, min(3.0, new_zoom))
         if abs(new_zoom - self._zoom) > 0.005:
             self._zoom = new_zoom
             self._invalidate_cache()
             self._render_page()
 
+    def _apply_zoom_factor(self, factor: float):
+        """Multiply current zoom by *factor*."""
+        self._apply_zoom(self._zoom * factor)
+
     def _zoom_in(self):
-        if self._zoom < 3.0:
-            self._zoom = min(3.0, self._zoom + 0.2)
-            self._invalidate_cache()
-            self._render_page()
+        self._apply_zoom(self._zoom + 0.2)
 
     def _zoom_out(self):
-        if self._zoom > 0.5:
-            self._zoom = max(0.5, self._zoom - 0.2)
-            self._invalidate_cache()
-            self._render_page()
+        self._apply_zoom(self._zoom - 0.2)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:

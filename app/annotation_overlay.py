@@ -317,6 +317,3 @@ def _pt_seg_dist(px: float, py: float,
     t = max(0.0, min(1.0, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)))
     return math.hypot(px - (x1 + t * dx), py - (y1 + t * dy))
 
-
-# Keep the old name as an alias so nothing breaks
-_point_to_segment_dist = _pt_seg_dist
