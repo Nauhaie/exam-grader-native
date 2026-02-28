@@ -35,7 +35,7 @@ pyinstaller \
     --name "ExamGrader" \
     --windowed \
     --onedir \
-    --add-data "sample_data:sample_data" \
+    --add-data "sample_project:sample_project" \
     app/main.py
 
 echo ""

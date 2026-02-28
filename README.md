@@ -105,6 +105,8 @@ shown in the grading panel.
 | → | **A** | Arrow (red) |
 | ○ | **O** | Circle (red, resize handle shown at the bottom) |
 | ~ | **N** | Approx/tilde (orange, "approximately correct") |
+| ⊠ | **R** | Rect cross (red, X drawn inside a rectangle) |
+| S | **S** | Stamp (place a preset text annotation; see Settings → Preset Annotations) |
 | ⌫ | **E** | Eraser (click annotation to delete) |
 
 For **line / arrow / circle**: click once to set the start point, click again to finish.  
@@ -148,6 +150,8 @@ For circles, drag the blue handle at the bottom to resize, or drag the circumfer
 | **A** | Arrow |
 | **O** | Circle |
 | **N** | Approx/tilde (~) |
+| **R** | Rect cross (⊠) |
+| **S** | Stamp (preset text) |
 | **E** | Eraser |
 | **Esc** | Cancel in-progress shape / deselect tool |
 
@@ -169,7 +173,7 @@ All exports go to fixed paths inside the project directory — no file dialogs n
 
 ### Annotated PDFs
 
-**Export → Export Annotated PDFs**
+**Project → Export Annotated PDFs**
 
 Output files are written to `<project>/export/annotated/`.
 The filename for each student is determined by the `export_filename_template`
@@ -177,8 +181,8 @@ field in `config.json`.
 
 ### Grades
 
-- **Export → Export Grades as CSV** → `<project>/export/grades.csv`
-- **Export → Export Grades as XLSX** → `<project>/export/grades.xlsx`
+- **Project → Export Grades as CSV** → `<project>/export/grades.csv`
+- **Project → Export Grades as XLSX** → `<project>/export/grades.xlsx`
 
 ---
 
@@ -214,9 +218,9 @@ app/
   grading_panel.py     – grade-entry spreadsheet
   data_store.py        – load/save sessions, students, grades, annotations
   models.py            – data classes
+  settings_dialog.py   – unified settings dialog (grading, export, scheme, presets)
   setup_dialog.py      – project-open dialog
 sample_project/        – example project (copy and fill exams/ with your PDFs)
-sample_data/           – legacy example CSV, JSON and exam PDFs
 requirements.txt
 package-app.sh
 ```
