@@ -187,9 +187,14 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
     thick = max(2, round(3 * s))      # pen width for checkmark / cross (thicker)
 
     if ann.type == "checkmark":
-        painter.setPen(QPen(_GREEN, thick))
-        painter.drawLine(cx - rc, cy, cx - rc // 3, cy + rc)
-        painter.drawLine(cx - rc // 3, cy + rc, cx + rc, cy - rc)
+        pen = QPen(_GREEN, thick, Qt.PenStyle.SolidLine,
+                   Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        path = QPainterPath()
+        path.moveTo(cx - rc, cy)
+        path.lineTo(cx - rc // 3, cy + rc)
+        path.lineTo(cx + rc, cy - rc)
+        painter.drawPath(path)
 
     elif ann.type == "cross":
         painter.setPen(QPen(_RED, thick))
