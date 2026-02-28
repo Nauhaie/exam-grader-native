@@ -72,11 +72,11 @@ def _insert_cover_page(
     fs_title = min(pw, ph) * 0.028     # slightly smaller for name+ID line
     fs_mark = min(pw, ph) * 0.04       # smaller grade
     fs_body = min(pw, ph) * 0.018      # ~15 pt on A4
-    fs_small = min(pw, ph) * 0.012     # ~7 pt on A4
+    fs_small = min(pw, ph) * 0.016     # ~11 pt on A4
     line_gap = fs_body * 1.6
 
     # ── Student name + ID (same line) ────────────────────────────────────
-    name_text = f"{student.first_name} {student.last_name}  —  ID: {student.student_number}"
+    name_text = f"{student.first_name} {student.last_name} ({student.student_number})"
     _centered_text(page, name_text, cx, y, pw - 2 * margin, fs_title, bold=True)
     y += fs_title * 2.0
 
@@ -105,12 +105,20 @@ def _insert_cover_page(
         ex_pts = sum(student_scores.get(sq.name, 0) or 0 for sq in ex.subquestions)
 
         if settings.cover_page_detail and ex.subquestions:
-            # Compact: exercise name, total, then all subquestion scores on one line
+            # Compact: exercise name + total in bold, then subquestion scores in normal weight
             parts = [f"{sq.name}: {(student_scores.get(sq.name, 0) or 0):g}/{sq.max_points:g}"
                      for sq in ex.subquestions]
+            ex_prefix = f"{ex.name}:  {ex_pts:g}/{ex_max:g}"
             detail_str = "  (" + ", ".join(parts) + ")"
-            ex_label = f"{ex.name}:  {ex_pts:g}/{ex_max:g}{detail_str}"
-            _left_text(page, ex_label, col_name_x, y, usable_w, fs_small)
+            # Measure the bold prefix width so the detail part starts right after it
+            try:
+                bold_font = fitz.Font("hebo")
+                prefix_w = bold_font.text_length(ex_prefix, fontsize=fs_small)
+            except Exception:
+                prefix_w = len(ex_prefix) * fs_small * 0.5
+            _left_text(page, ex_prefix, col_name_x, y, usable_w, fs_small, bold=True)
+            _left_text(page, detail_str, col_name_x + prefix_w, y,
+                       max(1.0, usable_w - prefix_w), fs_small)
         else:
             # Exercise header line only
             ex_label = f"{ex.name}:  {ex_pts:g}/{ex_max:g}"

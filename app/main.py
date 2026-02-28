@@ -223,7 +223,13 @@ class MainWindow(QMainWindow):
                 for sq in subquestions:
                     row[sq.name] = sg.get(sq.name, "")
                 writer.writerow(row)
-        QMessageBox.information(self, "Export", f"Grades exported to:\n{path}")
+        dlg = QMessageBox(QMessageBox.Icon.Information, "Export",
+                          f"Grades exported to:\n{path}", parent=self)
+        open_btn = dlg.addButton("Open File", QMessageBox.ButtonRole.ActionRole)
+        dlg.addButton(QMessageBox.StandardButton.Ok)
+        dlg.exec()
+        if dlg.clickedButton() is open_btn:
+            _open_file(path)
 
     def _export_xlsx(self):
         if not self._grading_scheme or not self._students:
@@ -242,7 +248,13 @@ class MainWindow(QMainWindow):
                 + [sg.get(sq.name, "") for sq in subquestions]
             )
         wb.save(path)
-        QMessageBox.information(self, "Export", f"Grades exported to:\n{path}")
+        dlg = QMessageBox(QMessageBox.Icon.Information, "Export",
+                          f"Grades exported to:\n{path}", parent=self)
+        open_btn = dlg.addButton("Open File", QMessageBox.ButtonRole.ActionRole)
+        dlg.addButton(QMessageBox.StandardButton.Ok)
+        dlg.exec()
+        if dlg.clickedButton() is open_btn:
+            _open_file(path)
 
     def _export_annotated_pdfs(self):
         if not self._students:
@@ -374,6 +386,21 @@ class MainWindow(QMainWindow):
 def _open_folder(path: str) -> None:
     """Open *path* in the platform's file manager (Finder, Explorer, etc.)."""
     if not os.path.isdir(path):
+        return
+    try:
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", path])
+        elif sys.platform == "win32":
+            os.startfile(path)  # type: ignore[attr-defined]
+        else:
+            subprocess.Popen(["xdg-open", path])
+    except Exception:
+        pass
+
+
+def _open_file(path: str) -> None:
+    """Open *path* with the platform's default application."""
+    if not os.path.isfile(path):
         return
     try:
         if sys.platform == "darwin":
