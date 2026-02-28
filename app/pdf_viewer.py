@@ -671,10 +671,24 @@ class PDFViewerPanel(QWidget):
             self._scroll.horizontalScrollBar().setValue(int(self._pan_hval - dx))
             self._scroll.verticalScrollBar().setValue(int(self._pan_vval - dy))
             return
-        # Hover cursor hints
+        # Hover / drag cursor hints
         if QApplication.queryKeyboardModifiers() & _PAN_MOD:
             self._page_label.setCursor(Qt.CursorShape.OpenHandCursor)
-        elif self._drag is None and self._active_tool in (TOOL_NONE, None):
+        elif self._drag is not None:
+            # Keep the appropriate cursor shape during an active drag
+            d = self._drag
+            if d.kind in ("circle-move", "line-move", "point", "rectcross-move"):
+                self._page_label.setCursor(Qt.CursorShape.ClosedHandCursor)
+            elif d.kind == "text-resize":
+                self._page_label.setCursor(Qt.CursorShape.SizeHorCursor)
+            elif d.kind == "circle-edge":
+                self._page_label.setCursor(Qt.CursorShape.SizeVerCursor)
+            elif d.kind in ("rectcross-tl", "rectcross-tr",
+                             "rectcross-bl", "rectcross-br"):
+                self._page_label.setCursor(Qt.CursorShape.SizeAllCursor)
+            elif d.kind in ("line-start", "line-end"):
+                self._page_label.setCursor(Qt.CursorShape.CrossCursor)
+        elif self._active_tool in (TOOL_NONE, None):
             # Show grab cursor when hovering over a draggable annotation
             drag = self._find_drag_target(fx, fy)
             if drag is not None:

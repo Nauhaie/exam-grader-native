@@ -256,6 +256,7 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
 
     elif ann.type == "circle" and ann.x2 is not None and ann.y2 is not None:
         painter.setPen(QPen(_RED, stroke))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
         radius = int(math.hypot(ann.x2 * w - cx, ann.y2 * h - cy))
         painter.drawEllipse(cx - radius, cy - radius, radius * 2, radius * 2)
         # Resize handle always at the visual bottom of the circle

@@ -51,19 +51,24 @@ def _insert_cover_page(
     # Insert a blank page at index 0
     page = doc.new_page(pno=0, width=pw, height=ph)
 
-    # Resolve effective score_total
+    # Resolve effective score_total (must match GradingPanel._compute_grade)
     scheme_total = scheme.max_total()
     score_total = settings.score_total if settings.score_total is not None else scheme_total
-    if score_total <= 0:
-        score_total = max(scheme_total, 1.0)
 
+    # Compute points_total by iterating over scheme subquestions only,
+    # matching the grading panel which ignores stale grades for removed
+    # subquestions.
     student_scores = grades or {}
-    points_total = sum(v for v in student_scores.values() if v is not None)
+    all_sqs = [sq for _, sq in scheme.all_subquestions()]
+    points_total = sum(student_scores.get(sq.name, 0) for sq in all_sqs)
 
-    # Compute mark (same formula as the grading panel)
+    # Compute mark (same formula as GradingPanel._compute_grade)
     rounding = max(0.001, settings.rounding)
-    raw_mark = (points_total / score_total) * settings.max_note if score_total else 0.0
-    mark = round(raw_mark / rounding) * rounding
+    if score_total <= 0:
+        mark = 0.0
+    else:
+        raw_mark = (points_total / score_total) * settings.max_note
+        mark = round(raw_mark / rounding) * rounding
 
     # ── Layout constants ──────────────────────────────────────────────────
     margin = pw * 0.08
