@@ -27,6 +27,7 @@ TOOL_CIRCLE    = "circle"
 TOOL_TILDE     = "tilde"
 TOOL_ERASER    = "eraser"
 TOOL_STAMP     = "stamp"
+TOOL_RECTCROSS = "rectcross"
 
 _KEY_TOOL_MAP = {
     Qt.Key.Key_V: TOOL_CHECKMARK,
@@ -38,6 +39,7 @@ _KEY_TOOL_MAP = {
     Qt.Key.Key_N: TOOL_TILDE,
     Qt.Key.Key_E: TOOL_ERASER,
     Qt.Key.Key_S: TOOL_STAMP,
+    Qt.Key.Key_R: TOOL_RECTCROSS,
 }
 
 _DRAG_TOL = 20          # pixel hit-tolerance for drag handles
@@ -297,6 +299,7 @@ class PDFViewerPanel(QWidget):
     jump_requested         = Signal()   # 'P' key
     student_prev_requested = Signal()   # Shift+Alt+Left
     student_next_requested = Signal()   # Shift+Alt+Right
+    open_settings_presets_requested = Signal()  # from stamp popup "Edit Presets…"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -337,6 +340,7 @@ class PDFViewerPanel(QWidget):
             (TOOL_ARROW,     "→", "Arrow (A)"),
             (TOOL_CIRCLE,    "○", "Circle (O)"),
             (TOOL_TILDE,     "~", "Approx/tilde (N)"),
+            (TOOL_RECTCROSS, "⊠", "Rect cross (R)"),
             (TOOL_STAMP,     "S", "Stamp preset text (S)"),
             (TOOL_ERASER,    "⌫", "Eraser (E)"),
         ]:
@@ -526,7 +530,7 @@ class PDFViewerPanel(QWidget):
         """Compose base + optional preview, push to screen."""
         if self._base_pixmap is None:
             return
-        if (self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE)
+        if (self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE, TOOL_RECTCROSS)
                 and self._line_start is not None
                 and self._preview_pos is not None):
             display = self._base_pixmap.copy()
@@ -578,6 +582,8 @@ class PDFViewerPanel(QWidget):
             if drag is not None:
                 if drag.kind in ("text-resize", "circle-edge"):
                     self._page_label.setCursor(Qt.CursorShape.SizeVerCursor)
+                elif drag.kind.startswith("rectcross-") and drag.kind != "rectcross-move":
+                    self._page_label.setCursor(Qt.CursorShape.SizeAllCursor)
                 else:
                     self._page_label.setCursor(Qt.CursorShape.OpenHandCursor)
             else:
@@ -588,7 +594,7 @@ class PDFViewerPanel(QWidget):
             self._drag_moved = True
             self._apply_drag(fx, fy)
             return
-        if (self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE)
+        if (self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE, TOOL_RECTCROSS)
                 and self._line_start is not None):
             self._preview_pos = (fx, fy)
             self._update_display()
@@ -638,7 +644,7 @@ class PDFViewerPanel(QWidget):
             else:
                 self._start_text_edit(fx, fy)
 
-        elif self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE):
+        elif self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE, TOOL_RECTCROSS):
             if self._line_start is None:
                 self._line_start = (fx, fy)
                 self._preview_pos = (fx, fy)
@@ -727,6 +733,21 @@ class PDFViewerPanel(QWidget):
             ann.x2, ann.y2 = cl(d.orig_x2 + dx), cl(d.orig_y2 + dy)
         elif d.kind == "text-resize":
             ann.width = max(0.02, min(1.0, d.orig_width + dx))
+        elif d.kind == "rectcross-move":
+            ann.x,  ann.y  = cl(d.orig_x  + dx), cl(d.orig_y  + dy)
+            ann.x2, ann.y2 = cl(d.orig_x2 + dx), cl(d.orig_y2 + dy)
+        elif d.kind == "rectcross-tl":
+            ann.x = cl(d.orig_x + dx)
+            ann.y = cl(d.orig_y + dy)
+        elif d.kind == "rectcross-tr":
+            ann.x2 = cl(d.orig_x2 + dx)
+            ann.y  = cl(d.orig_y  + dy)
+        elif d.kind == "rectcross-bl":
+            ann.x  = cl(d.orig_x  + dx)
+            ann.y2 = cl(d.orig_y2 + dy)
+        elif d.kind == "rectcross-br":
+            ann.x2 = cl(d.orig_x2 + dx)
+            ann.y2 = cl(d.orig_y2 + dy)
 
         self._rebuild_base_and_display()
 
@@ -764,6 +785,29 @@ class PDFViewerPanel(QWidget):
                 # Move: grab near the circumference (but not the handle area)
                 if abs(math.hypot(mx - cx, my - cy) - radius) <= tol:
                     return _DragState("circle-move", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+
+            elif ann.type == "rectcross" and ann.x2 is not None:
+                # 4 corners of the rectangle
+                corners = [
+                    (ann.x * w, ann.y * h),
+                    (ann.x2 * w, ann.y * h),
+                    (ann.x * w, ann.y2 * h),
+                    (ann.x2 * w, ann.y2 * h),
+                ]
+                corner_kinds = [
+                    "rectcross-tl", "rectcross-tr",
+                    "rectcross-bl", "rectcross-br",
+                ]
+                for (ccx, ccy), kind in zip(corners, corner_kinds):
+                    if math.hypot(mx - ccx, my - ccy) <= tol:
+                        return _DragState(kind, i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+                # Move: grab on either diagonal line
+                x1, y1 = ann.x * w, ann.y * h
+                x2, y2 = ann.x2 * w, ann.y2 * h
+                d1 = annotation_overlay._pt_seg_dist(mx, my, x1, y1, x2, y2)
+                d2 = annotation_overlay._pt_seg_dist(mx, my, x2, y1, x1, y2)
+                if min(d1, d2) <= tol:
+                    return _DragState("rectcross-move", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
 
             elif ann.type == "text":
                 rect = annotation_overlay.get_text_box_rect(ann, w, h)
@@ -922,6 +966,15 @@ class PDFViewerPanel(QWidget):
             self.deselect_tool()
 
         preset_list.itemClicked.connect(_on_pick)
+
+        edit_btn = QPushButton("Edit Presets…")
+        edit_btn.setStyleSheet("QPushButton { border: 1px solid #ccc; padding: 3px; }")
+        def _on_edit_presets():
+            self._close_stamp_popup()
+            self.deselect_tool()
+            self.open_settings_presets_requested.emit()
+        edit_btn.clicked.connect(_on_edit_presets)
+        playout.addWidget(edit_btn)
 
         popup.adjustSize()
         # Ensure popup fits within viewport

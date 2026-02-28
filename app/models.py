@@ -17,7 +17,7 @@ class Student:
 @dataclass
 class Annotation:
     page: int  # 0-based page index
-    type: str  # "checkmark", "cross", "text", "line", "arrow", "circle"
+    type: str  # "checkmark", "cross", "text", "line", "arrow", "circle", "rectcross"
     x: float   # fractional coordinate 0.0–1.0
     y: float   # fractional coordinate 0.0–1.0
     text: Optional[str] = None   # only for type "text"

@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
         self._pdf_viewer.jump_requested.connect(self._on_jump_requested)
         self._pdf_viewer.student_prev_requested.connect(self._select_prev_student)
         self._pdf_viewer.student_next_requested.connect(self._select_next_student)
+        self._pdf_viewer.open_settings_presets_requested.connect(self._show_settings)
         splitter.addWidget(self._pdf_viewer)
 
         # Right: grading spreadsheet

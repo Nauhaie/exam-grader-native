@@ -215,6 +215,14 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                             radius = math.hypot(ex_d - cx_d, ey_d - cy_d)
                             _log(f"       draw_circle : center=({cx_d:.2f},{cy_d:.2f}) radius={radius:.2f}")
                             page.draw_circle((cx_d, cy_d), radius, color=_RED, width=2)
+                        elif ann.type == "rectcross" and ann.x2 is not None and ann.y2 is not None:
+                            p1 = to_draw(cx_v, cy_v)
+                            p2 = to_draw(ann.x2 * pw, ann.y2 * ph)
+                            p3 = to_draw(ann.x2 * pw, cy_v)
+                            p4 = to_draw(cx_v, ann.y2 * ph)
+                            _log(f"       draw_rectcross : {p1}→{p2}, {p3}→{p4}")
+                            page.draw_line(p1, p2, color=_RED, width=2.5)
+                            page.draw_line(p3, p4, color=_RED, width=2.5)
 
                     _log("")
 
