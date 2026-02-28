@@ -466,6 +466,15 @@ class PDFViewerPanel(QWidget):
 
     # ── Public API ────────────────────────────────────────────────────────────
 
+    def reinstall_viewport_filter(self):
+        """Re-install the event filter on the scroll-area viewport.
+
+        Call after window-state changes (e.g. full-screen transitions)
+        that may cause the viewport widget to be recreated, which would
+        silently drop our filter.
+        """
+        self._scroll.viewport().installEventFilter(self)
+
     def load_pdf(self, pdf_path: Optional[str], annotations: List[Annotation]):
         if self._doc:
             self._doc.close()
