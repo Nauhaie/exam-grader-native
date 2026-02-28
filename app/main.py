@@ -303,8 +303,13 @@ class MainWindow(QMainWindow):
                 print(f"[Export]   log file → {log_path}")
 
             try:
+                student_grades = self._grades.get(student.student_number, {})
                 pdf_exporter.bake_annotations(src, anns, dst, log_path=log_path,
-                                              debug=debug)
+                                              debug=debug,
+                                              student=student,
+                                              grades=student_grades,
+                                              scheme=self._grading_scheme,
+                                              settings=self._grading_settings)
                 if debug and log_path and os.path.isfile(log_path):
                     print(f"[Export]   log written OK ({os.path.getsize(log_path)} bytes)")
                 elif debug and log_path:

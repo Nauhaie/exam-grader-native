@@ -185,6 +185,29 @@ class SettingsDialog(QDialog):
         hint.setStyleSheet("color: #555;")
         layout.addWidget(hint)
 
+        layout.addSpacing(16)
+
+        cover_label = QLabel("<b>Cover page</b>")
+        layout.addWidget(cover_label)
+
+        cover_hint = QLabel(
+            "Each exported PDF starts with a cover page showing the student's "
+            "name, ID, final mark, and points breakdown."
+        )
+        cover_hint.setWordWrap(True)
+        cover_hint.setStyleSheet("color: #555;")
+        layout.addWidget(cover_hint)
+
+        self._cover_detail_cb = QCheckBox(
+            "Include detailed subquestion scores (not just per exercise)"
+        )
+        self._cover_detail_cb.setChecked(settings.cover_page_detail)
+        self._cover_detail_cb.setToolTip(
+            "When checked, the cover page lists every subquestion score.\n"
+            "When unchecked, only the total per exercise is shown."
+        )
+        layout.addWidget(self._cover_detail_cb)
+
         layout.addStretch()
         return w
 
@@ -500,6 +523,7 @@ class SettingsDialog(QDialog):
                 else self._score_total_spin.value()
             ),
             debug_mode=self._debug_cb.isChecked(),
+            cover_page_detail=self._cover_detail_cb.isChecked(),
         )
 
     def get_export_template(self) -> str:

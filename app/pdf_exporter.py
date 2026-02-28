@@ -12,17 +12,135 @@ via ``to_draw()`` before calling any draw method.
 """
 import math
 import os
+from dataclasses import replace
 from typing import Callable, List, Optional, Tuple
 
 import fitz
 
-from models import Annotation, Student
+from models import Annotation, GradingScheme, GradingSettings, Student
 
 
 # ── Colour constants ──────────────────────────────────────────────────────────
 _RED    = (0.8, 0.08, 0.08)   # lines, arrows, circles
 _GREEN  = (0.0, 0.60, 0.0)    # checkmarks
 _ORANGE = (1.0, 0.55, 0.0)    # tilde (~)
+_BLACK  = (0, 0, 0)
+_GREY   = (0.35, 0.35, 0.35)
+
+
+# ── Cover page ────────────────────────────────────────────────────────────────
+
+def _insert_cover_page(
+    doc: fitz.Document,
+    student: Student,
+    grades: dict,
+    scheme: GradingScheme,
+    settings: GradingSettings,
+) -> None:
+    """Insert a cover page at position 0 with student info and grade breakdown.
+
+    The cover page has the same aspect ratio as page 1 of the scan.
+    """
+    # Determine aspect ratio from the first page (if any)
+    if doc.page_count > 0:
+        first = doc[0]
+        pw, ph = first.rect.width, first.rect.height
+    else:
+        pw, ph = 595.0, 842.0  # A4 portrait default
+
+    # Insert a blank page at index 0
+    page = doc.new_page(pno=0, width=pw, height=ph)
+
+    # Resolve effective score_total
+    scheme_total = scheme.max_total()
+    score_total = settings.score_total if settings.score_total is not None else scheme_total
+    if score_total <= 0:
+        score_total = max(scheme_total, 1.0)
+
+    student_scores = grades or {}
+    points_total = sum(v for v in student_scores.values() if v is not None)
+
+    # Compute mark (same formula as the grading panel)
+    rounding = max(0.001, settings.rounding)
+    raw_mark = (points_total / score_total) * settings.max_note if score_total else 0.0
+    mark = round(raw_mark / rounding) * rounding
+
+    # ── Layout constants ──────────────────────────────────────────────────
+    margin = pw * 0.08
+    cx = pw / 2              # horizontal centre
+    y = margin               # running y position
+    fs_title = min(pw, ph) * 0.035     # ~24 pt on A4
+    fs_mark = min(pw, ph) * 0.06       # ~50 pt on A4
+    fs_body = min(pw, ph) * 0.018      # ~15 pt on A4
+    fs_small = min(pw, ph) * 0.014     # ~12 pt on A4
+    line_gap = fs_body * 1.6
+
+    # ── Student name ──────────────────────────────────────────────────────
+    name_text = f"{student.first_name} {student.last_name}"
+    _centered_text(page, name_text, cx, y, pw - 2 * margin, fs_title, bold=True)
+    y += fs_title * 1.5
+
+    # ── Student ID ────────────────────────────────────────────────────────
+    _centered_text(page, f"ID: {student.student_number}", cx, y, pw - 2 * margin,
+                   fs_body, color=_GREY)
+    y += fs_body * 2.5
+
+    # ── Mark ──────────────────────────────────────────────────────────────
+    mark_str = f"{mark:g}/{settings.max_note:g}"
+    _centered_text(page, mark_str, cx, y, pw - 2 * margin, fs_mark, bold=True)
+    y += fs_mark * 1.8
+
+    # ── Total points ──────────────────────────────────────────────────────
+    _centered_text(page, f"Total: {points_total:g}/{score_total:g} pts",
+                   cx, y, pw - 2 * margin, fs_body, color=_GREY)
+    y += fs_body * 2.5
+
+    # ── Separator line ────────────────────────────────────────────────────
+    page.draw_line((margin, y), (pw - margin, y), color=_GREY, width=0.5)
+    y += line_gap
+
+    # ── Exercise / subquestion breakdown ──────────────────────────────────
+    col_name_x = margin
+    col_score_x = pw - margin
+    usable_w = pw - 2 * margin
+
+    for ex in scheme.exercises:
+        # Exercise total
+        ex_max = sum(sq.max_points for sq in ex.subquestions)
+        ex_pts = sum(student_scores.get(sq.name, 0) or 0 for sq in ex.subquestions)
+
+        # Exercise header line
+        ex_label = f"{ex.name}:  {ex_pts:g}/{ex_max:g}"
+        _left_text(page, ex_label, col_name_x, y, usable_w, fs_body, bold=True)
+        y += line_gap
+
+        if settings.cover_page_detail:
+            for sq in ex.subquestions:
+                sq_pts = student_scores.get(sq.name, 0) or 0
+                sq_label = f"  {sq.name}:  {sq_pts:g}/{sq.max_points:g}"
+                _left_text(page, sq_label, col_name_x, y, usable_w, fs_small)
+                y += fs_small * 1.5
+
+        # Avoid running past the bottom of the page
+        if y > ph - margin:
+            break
+
+
+def _centered_text(page, text: str, cx: float, y: float, max_w: float,
+                   fontsize: float, bold: bool = False, color=_BLACK):
+    """Insert centred text on *page* at vertical position *y*."""
+    fname = "hebo" if bold else "helv"
+    rect = fitz.Rect(cx - max_w / 2, y, cx + max_w / 2, y + fontsize * 2)
+    page.insert_textbox(rect, text, fontsize=fontsize, fontname=fname,
+                        color=color, align=1)  # align=1 → centre
+
+
+def _left_text(page, text: str, x: float, y: float, max_w: float,
+               fontsize: float, bold: bool = False, color=_BLACK):
+    fname = "hebo" if bold else "helv"
+    rect = fitz.Rect(x, y, x + max_w, y + fontsize * 2)
+    page.insert_textbox(rect, text, fontsize=fontsize, fontname=fname,
+                        color=color, align=0)  # align=0 → left
 
 
 def export_all(
@@ -75,8 +193,16 @@ def export_all(
 
 
 def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: str,
-                     log_path: Optional[str] = None, debug: bool = True):
+                     log_path: Optional[str] = None, debug: bool = True,
+                     student: Optional[Student] = None,
+                     grades: Optional[dict] = None,
+                     scheme: Optional[GradingScheme] = None,
+                     settings: Optional[GradingSettings] = None):
     """Open *pdf_path*, draw *annotations* on each page, save to *output_path*.
+
+    If *student*, *grades*, *scheme*, and *settings* are all provided, a cover
+    page with the student's name, mark, and grade breakdown is inserted before
+    the scanned pages.
 
     If *log_path* is given and *debug* is True, write a human-readable debug log
     alongside the PDF with full coordinate details for every annotation so issues
@@ -113,6 +239,17 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                 print("[bake] opening PDF…")
             doc = fitz.open(pdf_path)
             try:
+                # ── Insert cover page (before annotating) ─────────────────
+                cover_inserted = False
+                if student is not None and grades is not None and scheme is not None and settings is not None:
+                    _insert_cover_page(doc, student, grades, scheme, settings)
+                    cover_inserted = True
+                    _log("COVER PAGE inserted at page 0")
+                    if debug:
+                        print("[bake] cover page inserted at page 0")
+                    # Shift annotation page indices since we prepended a page
+                    annotations = [replace(a, page=a.page + 1) for a in annotations]
+
                 for page_idx in range(doc.page_count):
                     page = doc[page_idx]
 
@@ -138,22 +275,25 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                         return vx, vy   # rot == 0
 
                     # ── "MARKED" watermark at top-left of every page ──────────────
-                    # insert_textbox rotate= must equal the page rotation so that the
-                    # text baseline goes left-to-right in the viewer (rot=0 → 0,
-                    # rot=90 → 90, etc.).  Using (360-rot) produced upside-down text
-                    # on landscape pages because it reversed the character direction.
-                    marked_fontsize = 8
-                    marked_rect = _text_rect(4, 4, 50, 16, rot, mw, mh)
-                    marked_rotate = rot
-                    overflow = page.insert_textbox(
-                        marked_rect, "MARKED",
-                        fontsize=marked_fontsize, fontname="helv",
-                        color=(0.8, 0.0, 0.0), align=0, rotate=marked_rotate,
-                    )
-                    _log(
-                        f"  MARKED stamp   : insert_textbox rect={marked_rect}"
-                        f" rotate={marked_rotate} overflow={overflow:.2f}"
-                    )
+                    # Skip the watermark on the cover page (page 0 when a cover
+                    # was inserted) since it already has its own content.
+                    if not (cover_inserted and page_idx == 0):
+                        # insert_textbox rotate= must equal the page rotation so that the
+                        # text baseline goes left-to-right in the viewer (rot=0 → 0,
+                        # rot=90 → 90, etc.).  Using (360-rot) produced upside-down text
+                        # on landscape pages because it reversed the character direction.
+                        marked_fontsize = 8
+                        marked_rect = _text_rect(4, 4, 50, 16, rot, mw, mh)
+                        marked_rotate = rot
+                        overflow = page.insert_textbox(
+                            marked_rect, "MARKED",
+                            fontsize=marked_fontsize, fontname="helv",
+                            color=(0.8, 0.0, 0.0), align=0, rotate=marked_rotate,
+                        )
+                        _log(
+                            f"  MARKED stamp   : insert_textbox rect={marked_rect}"
+                            f" rotate={marked_rotate} overflow={overflow:.2f}"
+                        )
 
                     page_anns = [a for a in annotations if a.page == page_idx]
                     _log(f"  annotations    : {len(page_anns)}")
