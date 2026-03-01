@@ -85,11 +85,11 @@ def _make_eraser_cursor() -> QCursor:
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     # outer circle
-    p.setPen(QPen(QColor(200, 40, 40), 2))
+    p.setPen(QPen(QColor(140, 140, 140), 2))
     p.drawEllipse(2, 2, size - 4, size - 4)
     # inner x
     m = 6
-    p.setPen(QPen(QColor(200, 40, 40), 2))
+    p.setPen(QPen(QColor(140, 140, 140), 2))
     p.drawLine(m, m, size - m, size - m)
     p.drawLine(size - m, m, m, size - m)
     p.end()
@@ -448,6 +448,7 @@ class PDFViewerPanel(QWidget):
         self._stamp_popup: Optional[QWidget] = None
         self._hi_dpr: bool = True
         self._hover_pos: Optional[Tuple[float, float]] = None  # mouse pos for point-tool preview
+        self._eraser_hover_idx: int = -1  # annotation index under eraser cursor
         # Pre-render cache: { page_index: QPixmap }
         self._page_cache: Dict[int, QPixmap] = {}
         self._cache_zoom: float = 0.0  # zoom level the cache was built at
@@ -572,6 +573,7 @@ class PDFViewerPanel(QWidget):
         self._line_start = None
         self._preview_pos = None
         self._hover_pos = None
+        self._eraser_hover_idx = -1
         self._drag = None
         self._cancel_inline_editor()
         self._close_stamp_popup()
@@ -606,17 +608,21 @@ class PDFViewerPanel(QWidget):
 
     def set_active_tool(self, tool: Optional[str]):
         had_preview = self._hover_pos is not None or self._preview_pos is not None
+        had_eraser_fade = self._eraser_hover_idx >= 0
         if tool != self._active_tool:
             self._line_start = None
             self._preview_pos = None
             self._hover_pos = None
+            self._eraser_hover_idx = -1
             self._close_stamp_popup()
             data_store.dbg(f"Tool changed: {self._active_tool!r} → {tool!r}")
         self._active_tool = tool
         for t, btn in self._tool_buttons.items():
             btn.setChecked(t == tool)
         self._update_cursor_for_tool()
-        if had_preview:
+        if had_eraser_fade:
+            self._rebuild_base_and_display()
+        elif had_preview:
             self._update_display()
 
     def deselect_tool(self):
@@ -752,6 +758,7 @@ class PDFViewerPanel(QWidget):
         self._base_pixmap = annotation_overlay.draw_annotations(
             self._raw_pixmap, self._annotations, self._current_page,
             skip_index=self._editing_ann_idx,
+            fade_index=self._eraser_hover_idx,
         )
         self._update_display()
 
@@ -795,8 +802,19 @@ class PDFViewerPanel(QWidget):
     def _update_hover_cursor(self, fx: float, fy: float):
         """Update cursor shape based on what's under *(fx, fy)* when no tool
         is active (or eraser is active)."""
+        # Cmd/Ctrl held → show open-hand to indicate pan-ready
+        if QApplication.queryKeyboardModifiers() & _PAN_MOD:
+            self._page_label.setCursor(Qt.CursorShape.OpenHandCursor)
+            return
         if self._active_tool == TOOL_ERASER:
             self._page_label.setCursor(_make_eraser_cursor())
+            w, h = self._page_size()
+            idx = annotation_overlay.find_annotation_at(
+                self._annotations, self._current_page, fx, fy, w, h
+            )
+            if idx != self._eraser_hover_idx:
+                self._eraser_hover_idx = idx
+                self._rebuild_base_and_display()
             return
         if self._active_tool not in (TOOL_NONE, None):
             return  # tool cursor already set by _update_cursor_for_tool
@@ -824,10 +842,16 @@ class PDFViewerPanel(QWidget):
                     self._page_label.setCursor(Qt.CursorShape.SizeHorCursor)
                     return
 
-        # Check if hovering over any draggable annotation → open hand
+        # Check if hovering over any draggable annotation
         drag = self._find_drag_target(fx, fy)
         if drag is not None:
-            self._page_label.setCursor(Qt.CursorShape.OpenHandCursor)
+            # Handle-specific cursors (endpoints, resize handles)
+            if drag.kind in ("line-start", "line-end", "circle-edge",
+                             "rectcross-tl", "rectcross-tr",
+                             "rectcross-bl", "rectcross-br"):
+                self._page_label.setCursor(Qt.CursorShape.SizeAllCursor)
+            else:
+                self._page_label.setCursor(Qt.CursorShape.OpenHandCursor)
             return
         self._page_label.setCursor(Qt.CursorShape.ArrowCursor)
 
@@ -842,6 +866,7 @@ class PDFViewerPanel(QWidget):
             self._pan_origin = (cur.x(), cur.y())
             self._pan_hval = self._scroll.horizontalScrollBar().value()
             self._pan_vval = self._scroll.verticalScrollBar().value()
+            self._page_label.setCursor(Qt.CursorShape.ClosedHandCursor)
             return
         if self._active_tool in (TOOL_NONE, None):
             drag = self._find_drag_target(fx, fy)
@@ -882,6 +907,7 @@ class PDFViewerPanel(QWidget):
         # End pan
         if self._pan_origin is not None:
             self._pan_origin = None
+            self._update_cursor_for_tool()
             return
         if self._drag is not None:
             self._apply_drag(fx, fy)
@@ -904,6 +930,7 @@ class PDFViewerPanel(QWidget):
             )
             if idx >= 0:
                 self._annotations.pop(idx)
+                self._eraser_hover_idx = -1
                 self._rebuild_base_and_display()
                 self.annotations_changed.emit()
                 self.deselect_tool()

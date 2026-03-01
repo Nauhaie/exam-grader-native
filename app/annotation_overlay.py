@@ -36,8 +36,13 @@ BASE_PAGE_HEIGHT: float = 842.0
 # ── Public drawing helpers ────────────────────────────────────────────────────
 
 def draw_annotations(pixmap: QPixmap, annotations: List[Annotation], page: int,
-                     skip_index: int = -1) -> QPixmap:
-    """Return a *copy* of *pixmap* with all annotations for *page* drawn on it."""
+                     skip_index: int = -1,
+                     fade_index: int = -1) -> QPixmap:
+    """Return a *copy* of *pixmap* with all annotations for *page* drawn on it.
+
+    *fade_index* – if >= 0, that annotation is drawn at 50 % opacity
+    (used by the eraser tool to preview which annotation would be deleted).
+    """
     result = pixmap.copy()
     painter = QPainter(result)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -51,7 +56,11 @@ def draw_annotations(pixmap: QPixmap, annotations: List[Annotation], page: int,
             continue
         if i == skip_index:
             continue
+        if i == fade_index:
+            painter.setOpacity(0.5)
         _draw_one(painter, ann, int(ann.x * w), int(ann.y * h), w, h)
+        if i == fade_index:
+            painter.setOpacity(1.0)
     painter.end()
     return result
 
@@ -270,25 +279,27 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
     elif ann.type == "line" and ann.x2 is not None and ann.y2 is not None:
         painter.setPen(QPen(_RED, stroke, Qt.PenStyle.SolidLine,
                             Qt.PenCapStyle.RoundCap))
-        painter.drawLine(cx, cy, int(ann.x2 * w), int(ann.y2 * h))
+        x2 = int(ann.x2 * w)
+        y2 = int(ann.y2 * h)
+        painter.drawLine(cx, cy, x2, y2)
+        _draw_handle(painter, cx, cy, s)
+        _draw_handle(painter, x2, y2, s)
 
     elif ann.type == "arrow" and ann.x2 is not None and ann.y2 is not None:
         painter.setPen(QPen(_RED, stroke, Qt.PenStyle.SolidLine,
                             Qt.PenCapStyle.RoundCap))
-        _draw_arrow(painter, cx, cy, int(ann.x2 * w), int(ann.y2 * h), s)
+        x2 = int(ann.x2 * w)
+        y2 = int(ann.y2 * h)
+        _draw_arrow(painter, cx, cy, x2, y2, s)
+        _draw_handle(painter, cx, cy, s)
+        _draw_handle(painter, x2, y2, s)
 
     elif ann.type == "circle" and ann.x2 is not None and ann.y2 is not None:
         painter.setPen(QPen(_RED, stroke))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         radius = int(math.hypot(ann.x2 * w - cx, ann.y2 * h - cy))
         painter.drawEllipse(cx - radius, cy - radius, radius * 2, radius * 2)
-        # Resize handle always at the visual bottom of the circle
-        hs = max(4, round(_RESIZE_HANDLE * s))
-        bx = cx
-        by = cy + radius
-        painter.setPen(QPen(QColor(70, 130, 230), max(1, round(1.5 * s))))
-        painter.setBrush(QColor(70, 130, 230, 200))
-        painter.drawEllipse(bx - hs // 2, by - hs // 2, hs, hs)
+        _draw_handle(painter, cx, cy + radius, s)
 
     elif ann.type == "rectcross" and ann.x2 is not None and ann.y2 is not None:
         x2 = int(ann.x2 * w)
@@ -298,12 +309,16 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
                             Qt.PenCapStyle.RoundCap))
         painter.drawLine(cx, cy, x2, y2)
         painter.drawLine(x2, cy, cx, y2)
-        # Draw small blue handles at the 4 corners
-        hs = max(4, round(_RESIZE_HANDLE * s))
-        painter.setPen(QPen(QColor(70, 130, 230), max(1, round(1.5 * s))))
-        painter.setBrush(QColor(70, 130, 230, 200))
         for hx, hy in [(cx, cy), (x2, cy), (cx, y2), (x2, y2)]:
-            painter.drawEllipse(hx - hs // 2, hy - hs // 2, hs, hs)
+            _draw_handle(painter, hx, hy, s)
+
+
+def _draw_handle(painter: QPainter, hx: int, hy: int, s: float):
+    """Draw a small blue circular handle at *(hx, hy)*."""
+    hs = max(4, round(_RESIZE_HANDLE * s))
+    painter.setPen(QPen(QColor(70, 130, 230), max(1, round(1.5 * s))))
+    painter.setBrush(QColor(70, 130, 230, 200))
+    painter.drawEllipse(hx - hs // 2, hy - hs // 2, hs, hs)
 
 
 def _draw_arrow(painter: QPainter, x1: int, y1: int, x2: int, y2: int,
