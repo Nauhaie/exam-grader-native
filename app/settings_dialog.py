@@ -275,6 +275,21 @@ class SettingsDialog(QDialog):
         sep_win_hint.setContentsMargins(20, 2, 0, 0)
         layout.addWidget(sep_win_hint)
 
+        layout.addSpacing(12)
+
+        self._show_extra_cb = QCheckBox("Show extra fields in grading panel")
+        self._show_extra_cb.setChecked(settings.show_extra_fields)
+        layout.addWidget(self._show_extra_cb)
+
+        show_extra_hint = QLabel(
+            "When enabled, additional columns from the students CSV are shown "
+            "in the grading spreadsheet."
+        )
+        show_extra_hint.setWordWrap(True)
+        show_extra_hint.setStyleSheet("color: #555;")
+        show_extra_hint.setContentsMargins(20, 2, 0, 0)
+        layout.addWidget(show_extra_hint)
+
         layout.addStretch()
         return w
 
@@ -570,6 +585,7 @@ class SettingsDialog(QDialog):
             cover_page_detail=self._cover_detail_cb.isChecked(),
             hi_dpr=self._hi_dpr_cb.isChecked(),
             grading_separate_window=self._separate_window_cb.isChecked(),
+            show_extra_fields=self._show_extra_cb.isChecked(),
         )
 
     def get_export_template(self) -> str:

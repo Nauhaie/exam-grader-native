@@ -36,6 +36,7 @@ class GradingSettings:
     cover_page_detail: bool = False # cover page: True = show subquestion detail, False = per-exercise only
     hi_dpr: bool = True             # use high DPI rendering (Retina); disable for speed
     grading_separate_window: bool = False  # show grading sheet in a separate window
+    show_extra_fields: bool = False  # show extra CSV columns in the grading panel
 
 
 @dataclass

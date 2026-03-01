@@ -8,7 +8,7 @@ from typing import List
 
 import openpyxl
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -536,6 +536,20 @@ def _open_path(path: str) -> None:
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Exam Grader")
+    # Set the application icon from icon.svg (supports both direct run and PyInstaller bundle)
+    _icon_path = None
+    if hasattr(sys, "_MEIPASS"):
+        # PyInstaller bundle: resources land in sys._MEIPASS
+        candidate = os.path.join(sys._MEIPASS, "icon.svg")
+        if os.path.isfile(candidate):
+            _icon_path = candidate
+    if _icon_path is None:
+        candidate = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                 "icon.svg")
+        if os.path.isfile(candidate):
+            _icon_path = candidate
+    if _icon_path:
+        app.setWindowIcon(QIcon(_icon_path))
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

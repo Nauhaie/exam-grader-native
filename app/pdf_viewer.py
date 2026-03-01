@@ -585,6 +585,14 @@ class PDFViewerPanel(QWidget):
                 if self._doc.page_count == 0:
                     raise ValueError("PDF has no pages")
                 data_store.dbg(f"PDF loaded: {pdf_path} ({self._doc.page_count} page(s))")
+                # Warn about annotations that reference pages beyond the PDF
+                for ann in self._annotations:
+                    if ann.page >= self._doc.page_count:
+                        data_store.dbg(
+                            f"  Annotation on page {ann.page + 1} (1-based) has no "
+                            f"corresponding page in this PDF "
+                            f"({self._doc.page_count} page(s)); it will be kept but not displayed"
+                        )
                 self._render_page()
             except Exception as exc:
                 data_store.dbg(f"Failed to open PDF: {pdf_path}: {exc}")
@@ -597,6 +605,11 @@ class PDFViewerPanel(QWidget):
         else:
             self._pdf_path = None
             data_store.dbg(f"PDF not found or no path given: {pdf_path}")
+            if self._annotations:
+                data_store.dbg(
+                    f"  {len(self._annotations)} annotation(s) retained for missing PDF; "
+                    "they will be kept in case the file is restored"
+                )
             self._show_placeholder()
 
     def set_annotations(self, annotations: List[Annotation]):
@@ -620,9 +633,23 @@ class PDFViewerPanel(QWidget):
         for t, btn in self._tool_buttons.items():
             btn.setChecked(t == tool)
         self._update_cursor_for_tool()
+        # If the new tool shows a point-marker ghost, immediately update
+        # _hover_pos from the current mouse position so the preview appears
+        # without requiring a mouse move.
+        if tool in _POINT_TOOLS:
+            pm = self._page_label.pixmap()
+            if pm and not pm.isNull():
+                label_pos = self._page_label.mapFromGlobal(QCursor.pos())
+                if self._page_label.rect().contains(label_pos):
+                    lw, lh = _pm_logical_size(pm)
+                    if lw > 0 and lh > 0:
+                        self._hover_pos = (
+                            max(0.0, min(1.0, label_pos.x() / lw)),
+                            max(0.0, min(1.0, label_pos.y() / lh)),
+                        )
         if had_eraser_fade:
             self._rebuild_base_and_display()
-        elif had_preview:
+        elif had_preview or self._hover_pos is not None:
             self._update_display()
 
     def deselect_tool(self):
