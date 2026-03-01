@@ -66,16 +66,3 @@ class GradingScheme:
     def max_total(self) -> float:
         return sum(sq.max_points for _, sq in self.all_subquestions())
 
-
-@dataclass
-class Grade:
-    student_number: str
-    scores: dict = field(default_factory=dict)  # { subquestion_name: points }
-
-    def total(self) -> float:
-        return sum(v for v in self.scores.values() if v is not None)
-
-    def grade_out_of_20(self, max_total: float) -> float:
-        if max_total == 0:
-            return 0.0
-        return round((self.total() / max_total) * 20, 2)

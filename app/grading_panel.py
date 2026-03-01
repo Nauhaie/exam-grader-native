@@ -124,7 +124,6 @@ class GradingPanel(QWidget):
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked |
-            QAbstractItemView.EditTrigger.SelectedClicked |
             QAbstractItemView.EditTrigger.AnyKeyPressed
         )
         hdr = self._table.horizontalHeader()
@@ -755,10 +754,9 @@ class GradingPanel(QWidget):
         if sq_start <= col < sq_end:
             sq = self._subquestions[col - sq_start]
             self._last_focus[student.student_number] = sq.name
-            # Single click → immediately enter edit mode for grading cells.
-            # Defer via singleShot so any currently-active editor is committed
-            # and destroyed first (avoids the "edit: editing failed" warning
-            # when the user clicks a different cell on the same row).
+            # Single click → enter edit mode for grading cells.
+            # Deferred via singleShot so that any previously-active editor
+            # is fully committed and destroyed before the new one opens.
             item = self._table.item(row, col)
             if item is not None:
                 QTimer.singleShot(0, lambda captured=item: self._table.editItem(captured))

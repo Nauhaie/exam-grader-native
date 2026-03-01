@@ -1,4 +1,5 @@
 """Data persistence: load/save grades, annotations, session config."""
+import csv
 import json
 import os
 from typing import Dict, List, Optional
@@ -231,7 +232,6 @@ def save_preset_annotations_to_config(config_data: dict, presets: List[str]) -> 
 # ── Students CSV ──────────────────────────────────────────────────────────────
 
 def load_students(csv_path: str) -> List[Student]:
-    import csv
     dbg(f"Loading students from {csv_path}")
     _CORE = {"student_number", "last_name", "first_name"}
     students = []
