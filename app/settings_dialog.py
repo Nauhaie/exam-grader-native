@@ -259,6 +259,22 @@ class SettingsDialog(QDialog):
         hi_dpr_hint.setContentsMargins(20, 2, 0, 0)
         layout.addWidget(hi_dpr_hint)
 
+        layout.addSpacing(12)
+
+        self._separate_window_cb = QCheckBox("Grading sheet in separate window")
+        self._separate_window_cb.setChecked(settings.grading_separate_window)
+        layout.addWidget(self._separate_window_cb)
+
+        sep_win_hint = QLabel(
+            "When enabled, the grading spreadsheet opens in its own window "
+            "instead of being side-by-side with the PDF viewer. "
+            "Useful for dual-monitor setups."
+        )
+        sep_win_hint.setWordWrap(True)
+        sep_win_hint.setStyleSheet("color: #555;")
+        sep_win_hint.setContentsMargins(20, 2, 0, 0)
+        layout.addWidget(sep_win_hint)
+
         layout.addStretch()
         return w
 
@@ -553,6 +569,7 @@ class SettingsDialog(QDialog):
             debug_mode=self._debug_cb.isChecked(),
             cover_page_detail=self._cover_detail_cb.isChecked(),
             hi_dpr=self._hi_dpr_cb.isChecked(),
+            grading_separate_window=self._separate_window_cb.isChecked(),
         )
 
     def get_export_template(self) -> str:

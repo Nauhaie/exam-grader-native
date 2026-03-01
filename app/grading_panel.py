@@ -274,8 +274,10 @@ class GradingPanel(QWidget):
     def focus_student_cell(self, student_number: str):
         """Focus the appropriate grading cell for *student_number*.
 
-        If a cell was previously edited for this student, return to it.
-        Otherwise focus the first grading column.
+        • No previous edit for this student → first grading cell.
+        • Last-edited cell is empty → jump back to it.
+        • Last-edited cell is filled → advance to the next grading cell
+          (clamped to the last grading column).
         """
         filtered = self._filtered_students()
         data_row = next(
@@ -286,12 +288,18 @@ class GradingPanel(QWidget):
             return
 
         sq_start = 2
+        sq_end = sq_start + len(self._subquestions) - 1  # last grading col
         row = _HEADER_ROWS + data_row
 
         last_sq = self._last_focus.get(student_number)
         if last_sq and any(sq.name == last_sq for sq in self._subquestions):
-            col = sq_start + next(i for i, sq in enumerate(self._subquestions)
-                                  if sq.name == last_sq)
+            sq_idx = next(i for i, sq in enumerate(self._subquestions)
+                          if sq.name == last_sq)
+            col = sq_start + sq_idx
+            # If the last-edited cell is non-empty, advance to the next one
+            item = self._table.item(row, col)
+            if item is not None and item.text().strip():
+                col = min(col + 1, sq_end)
         else:
             col = sq_start   # first grading column
 
@@ -700,6 +708,8 @@ class GradingPanel(QWidget):
 
         self._rebuilding = True
         self._table.blockSignals(True)
+        # Update cell text immediately (e.g. "1,5" → "1.5")
+        item.setText(str(val))
         color = self._grade_color(val, sq.max_points)
         if val > sq.max_points:
             color = QColor(255, 205, 210)
@@ -723,6 +733,10 @@ class GradingPanel(QWidget):
         if sq_start <= col < sq_end:
             sq = self._subquestions[col - sq_start]
             self._last_focus[student.student_number] = sq.name
+            # Single click → immediately enter edit mode for grading cells
+            item = self._table.item(row, col)
+            if item is not None:
+                self._table.editItem(item)
         if (self._current_student is None
                 or student.student_number != self._current_student.student_number):
             self.student_selected.emit(student)

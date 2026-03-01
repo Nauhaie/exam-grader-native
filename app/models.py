@@ -35,6 +35,7 @@ class GradingSettings:
     debug_mode: bool = False        # print debug messages and write .log files
     cover_page_detail: bool = False # cover page: True = show subquestion detail, False = per-exercise only
     hi_dpr: bool = True             # use high DPI rendering (Retina); disable for speed
+    grading_separate_window: bool = False  # show grading sheet in a separate window
 
 
 @dataclass

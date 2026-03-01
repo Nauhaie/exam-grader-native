@@ -54,6 +54,7 @@ class MainWindow(QMainWindow):
         self._project_config: dict = {}
         self._grading_settings: GradingSettings = GradingSettings()
         self._preset_annotations: list = []
+        self._grading_window = None  # separate window for grading panel (if enabled)
 
         self._setup_ui()
         self._load_session()
@@ -75,8 +76,8 @@ class MainWindow(QMainWindow):
         project_menu.addAction("Export Grades as XLSX").triggered.connect(self._export_xlsx)
         project_menu.addAction("Export Annotated PDFs").triggered.connect(self._export_annotated_pdfs)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.setCentralWidget(splitter)
+        self._splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.setCentralWidget(self._splitter)
 
         # Left: PDF viewer only
         self._pdf_viewer = PDFViewerPanel()
@@ -87,15 +88,15 @@ class MainWindow(QMainWindow):
         self._pdf_viewer.open_settings_presets_requested.connect(
             lambda: self._show_settings(initial_tab=3)
         )
-        splitter.addWidget(self._pdf_viewer)
+        self._splitter.addWidget(self._pdf_viewer)
 
         # Right: grading spreadsheet
         self._grading_panel = GradingPanel()
         self._grading_panel.grade_changed.connect(self._on_grade_changed)
         self._grading_panel.student_selected.connect(self._on_student_selected)
-        splitter.addWidget(self._grading_panel)
+        self._splitter.addWidget(self._grading_panel)
 
-        splitter.setSizes([600, 800])
+        self._splitter.setSizes([600, 800])
 
     def _load_session(self):
         data_store.dbg("Loading previous session…")
@@ -137,6 +138,7 @@ class MainWindow(QMainWindow):
         self._grading_panel.set_grading_settings(self._grading_settings)
         self._pdf_viewer.set_hi_dpr(self._grading_settings.hi_dpr)
         self._pdf_viewer.set_preset_annotations(self._preset_annotations)
+        self._apply_grading_window_mode()
         elapsed = time.perf_counter() - t0
         data_store.dbg(f"Project applied successfully: {len(self._students)} student(s) "
                        f"in {elapsed:.3f}s")
@@ -181,6 +183,7 @@ class MainWindow(QMainWindow):
                 self._students, self._grading_scheme, self._grades
             )
             self._pdf_viewer.set_preset_annotations(self._preset_annotations)
+            self._apply_grading_window_mode()
             # Persist to config.json
             project_dir = data_store.get_project_dir()
             if project_dir:
@@ -480,6 +483,36 @@ class MainWindow(QMainWindow):
         )
         if 0 <= idx < len(visible) - 1:
             self._select_student(visible[idx + 1])
+
+    def _apply_grading_window_mode(self):
+        """Move the grading panel between the splitter and a separate window."""
+        want_separate = self._grading_settings.grading_separate_window
+        is_separate = self._grading_window is not None
+
+        if want_separate and not is_separate:
+            # Detach from splitter → separate window
+            self._grading_panel.setParent(None)
+            self._grading_window = QWidget()
+            self._grading_window.setWindowTitle("Exam Grader — Grading Sheet")
+            self._grading_window.resize(800, 700)
+            win_layout = QVBoxLayout(self._grading_window)
+            win_layout.setContentsMargins(0, 0, 0, 0)
+            win_layout.addWidget(self._grading_panel)
+            self._grading_window.show()
+        elif not want_separate and is_separate:
+            # Re-attach to splitter
+            self._grading_panel.setParent(None)
+            self._splitter.addWidget(self._grading_panel)
+            self._splitter.setSizes([600, 800])
+            self._grading_window.close()
+            self._grading_window = None
+
+    def closeEvent(self, event):
+        """Close the separate grading window when the main window closes."""
+        if self._grading_window is not None:
+            self._grading_window.close()
+            self._grading_window = None
+        super().closeEvent(event)
 
 
 def _open_path(path: str) -> None:
