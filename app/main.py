@@ -456,6 +456,9 @@ class MainWindow(QMainWindow):
     def _on_jump_requested(self):
         """'P' key: jump to the grading row for the current student."""
         if self._current_student:
+            if self._grading_window is not None:
+                self._grading_window.activateWindow()
+                self._grading_window.raise_()
             self._grading_panel.focus_student_cell(
                 self._current_student.student_number
             )
