@@ -119,6 +119,7 @@ class GradingPanel(QWidget):
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked |
+            QAbstractItemView.EditTrigger.SelectedClicked |
             QAbstractItemView.EditTrigger.AnyKeyPressed
         )
         hdr = self._table.horizontalHeader()
@@ -233,7 +234,23 @@ class GradingPanel(QWidget):
 
     def _on_extra_toggled(self, checked: bool):
         self._show_extra = checked
+        self._update_search_modes()
         self._rebuild_table()
+
+    def _update_search_modes(self):
+        """Rebuild the search-mode combo so extra-field names appear when visible."""
+        current = self._search_mode.currentText()
+        self._search_mode.blockSignals(True)
+        self._search_mode.clear()
+        base = ["Name + ID", "Name", "ID", "Annotations"]
+        self._search_mode.addItems(base)
+        if self._show_extra:
+            for name in self._extra_field_names():
+                self._search_mode.addItem(name)
+        idx = self._search_mode.findText(current)
+        if idx >= 0:
+            self._search_mode.setCurrentIndex(idx)
+        self._search_mode.blockSignals(False)
 
     def set_current_student(self, student: Optional[Student]):
         self._current_student = student
@@ -296,6 +313,11 @@ class GradingPanel(QWidget):
             elif mode == "Annotations":
                 anns = data_store.load_annotations(s.student_number)
                 if any(a.text and text in a.text.lower() for a in anns):
+                    result.append(s)
+            else:
+                # Search in a specific extra field by name
+                val = s.extra_fields.get(mode, "")
+                if text in val.lower():
                     result.append(s)
         return result
 

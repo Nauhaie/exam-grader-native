@@ -36,8 +36,13 @@ BASE_PAGE_HEIGHT: float = 842.0
 # ── Public drawing helpers ────────────────────────────────────────────────────
 
 def draw_annotations(pixmap: QPixmap, annotations: List[Annotation], page: int,
-                     skip_index: int = -1) -> QPixmap:
-    """Return a *copy* of *pixmap* with all annotations for *page* drawn on it."""
+                     skip_index: int = -1,
+                     fade_index: int = -1) -> QPixmap:
+    """Return a *copy* of *pixmap* with all annotations for *page* drawn on it.
+
+    *fade_index* – if >= 0, that annotation is drawn at 50 % opacity
+    (used by the eraser tool to preview which annotation would be deleted).
+    """
     result = pixmap.copy()
     painter = QPainter(result)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -51,7 +56,11 @@ def draw_annotations(pixmap: QPixmap, annotations: List[Annotation], page: int,
             continue
         if i == skip_index:
             continue
+        if i == fade_index:
+            painter.setOpacity(0.5)
         _draw_one(painter, ann, int(ann.x * w), int(ann.y * h), w, h)
+        if i == fade_index:
+            painter.setOpacity(1.0)
     painter.end()
     return result
 
@@ -270,12 +279,28 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
     elif ann.type == "line" and ann.x2 is not None and ann.y2 is not None:
         painter.setPen(QPen(_RED, stroke, Qt.PenStyle.SolidLine,
                             Qt.PenCapStyle.RoundCap))
-        painter.drawLine(cx, cy, int(ann.x2 * w), int(ann.y2 * h))
+        x2 = int(ann.x2 * w)
+        y2 = int(ann.y2 * h)
+        painter.drawLine(cx, cy, x2, y2)
+        # Blue handles at both endpoints
+        hs = max(4, round(_RESIZE_HANDLE * s))
+        painter.setPen(QPen(QColor(70, 130, 230), max(1, round(1.5 * s))))
+        painter.setBrush(QColor(70, 130, 230, 200))
+        painter.drawEllipse(cx - hs // 2, cy - hs // 2, hs, hs)
+        painter.drawEllipse(x2 - hs // 2, y2 - hs // 2, hs, hs)
 
     elif ann.type == "arrow" and ann.x2 is not None and ann.y2 is not None:
         painter.setPen(QPen(_RED, stroke, Qt.PenStyle.SolidLine,
                             Qt.PenCapStyle.RoundCap))
-        _draw_arrow(painter, cx, cy, int(ann.x2 * w), int(ann.y2 * h), s)
+        x2 = int(ann.x2 * w)
+        y2 = int(ann.y2 * h)
+        _draw_arrow(painter, cx, cy, x2, y2, s)
+        # Blue handles at both endpoints
+        hs = max(4, round(_RESIZE_HANDLE * s))
+        painter.setPen(QPen(QColor(70, 130, 230), max(1, round(1.5 * s))))
+        painter.setBrush(QColor(70, 130, 230, 200))
+        painter.drawEllipse(cx - hs // 2, cy - hs // 2, hs, hs)
+        painter.drawEllipse(x2 - hs // 2, y2 - hs // 2, hs, hs)
 
     elif ann.type == "circle" and ann.x2 is not None and ann.y2 is not None:
         painter.setPen(QPen(_RED, stroke))

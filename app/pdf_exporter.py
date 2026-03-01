@@ -238,6 +238,9 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                     page_anns = [a for a in annotations if a.page == page_idx]
                     _log(f"  annotations    : {len(page_anns)}")
 
+                    # Scale factor: match the UI which scales relative to A4
+                    s = ph / 842.0
+
                     for ann_i, ann in enumerate(page_anns):
                         cx_v, cy_v = ann.x * pw, ann.y * ph
                         _log(f"  -- ann[{ann_i}] type={ann.type!r}")
@@ -245,13 +248,14 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                         _log(f"       visual x={cx_v:.2f}  y={cy_v:.2f}  (pw={pw:.2f} ph={ph:.2f})")
 
                         if ann.type == "checkmark":
-                            _draw_checkmark(page, cx_v, cy_v, to_draw)
+                            _draw_checkmark(page, cx_v, cy_v, to_draw, s)
                         elif ann.type == "cross":
-                            _draw_cross(page, cx_v, cy_v, to_draw)
+                            _draw_cross(page, cx_v, cy_v, to_draw, s)
                         elif ann.type == "tilde":
-                            _draw_tilde(page, cx_v, cy_v, rot, to_draw)
+                            _draw_tilde(page, cx_v, cy_v, rot, to_draw, s)
                         elif ann.type == "text" and ann.text:
-                            p = _TEXT_PAD_PT
+                            fontsize = _TEXT_FONTSIZE * s
+                            p = _TEXT_PAD_PT * s
                             if ann.width is not None:
                                 box_w = max(ann.width * pw, 10.0)
                             else:
@@ -259,13 +263,13 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                                     font = fitz.Font("helv")
                                     lines = ann.text.split("\n") if ann.text else [""]
                                     box_w = max(
-                                        (font.text_length(ln, fontsize=_TEXT_FONTSIZE) for ln in lines),
+                                        (font.text_length(ln, fontsize=fontsize) for ln in lines),
                                         default=0.0,
                                     ) + p * 2
                                 except Exception:
                                     box_w = max(len(ann.text) * 5.5, 20.0)
                                 box_w = max(box_w, 20.0)
-                            _, measured_box_h = _measure_text_box(ann.text, box_w, p, _TEXT_FONTSIZE)
+                            _, measured_box_h = _measure_text_box(ann.text, box_w, p, fontsize)
                             # Height is always computed from content; never stored.
                             box_h = max(measured_box_h, 10.0)
                             box_rect  = _text_rect(cx_v,     cy_v,     box_w,         box_h,         rot, mw, mh)
@@ -278,12 +282,12 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                             _log(f"       box_rect  : {box_rect}")
                             _log(f"       text_rect : {text_rect}")
                             _log(f"       text_rotate (insert_textbox rotate=) : {text_rotate}")
-                            _draw_text(page, ann, cx_v, cy_v, pw, ph, rot, mw, mh)
+                            _draw_text(page, ann, cx_v, cy_v, pw, ph, rot, mw, mh, s)
                         elif ann.type == "line" and ann.x2 is not None and ann.y2 is not None:
                             p1 = to_draw(cx_v, cy_v)
                             p2 = to_draw(ann.x2 * pw, ann.y2 * ph)
                             _log(f"       draw_line : {p1} → {p2}")
-                            page.draw_line(p1, p2, color=_RED, width=2, lineCap=1,
+                            page.draw_line(p1, p2, color=_RED, width=2 * s, lineCap=1,
                                            stroke_opacity=0.8)
                         elif ann.type == "arrow" and ann.x2 is not None and ann.y2 is not None:
                             p1 = to_draw(cx_v, cy_v)
@@ -295,16 +299,16 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                             ex_d, ey_d = to_draw(ann.x2 * pw, ann.y2 * ph)
                             radius = math.hypot(ex_d - cx_d, ey_d - cy_d)
                             _log(f"       draw_circle : center=({cx_d:.2f},{cy_d:.2f}) radius={radius:.2f}")
-                            page.draw_circle((cx_d, cy_d), radius, color=_RED, width=2, stroke_opacity=0.8)
+                            page.draw_circle((cx_d, cy_d), radius, color=_RED, width=2 * s, stroke_opacity=0.8)
                         elif ann.type == "rectcross" and ann.x2 is not None and ann.y2 is not None:
                             p1 = to_draw(cx_v, cy_v)
                             p2 = to_draw(ann.x2 * pw, ann.y2 * ph)
                             p3 = to_draw(ann.x2 * pw, cy_v)
                             p4 = to_draw(cx_v, ann.y2 * ph)
                             _log(f"       draw_rectcross : {p1}→{p2}, {p3}→{p4}")
-                            page.draw_line(p1, p2, color=_RED, width=2.5, lineCap=1,
+                            page.draw_line(p1, p2, color=_RED, width=3 * s, lineCap=1,
                                            stroke_opacity=0.8)
-                            page.draw_line(p3, p4, color=_RED, width=2.5, lineCap=1,
+                            page.draw_line(p3, p4, color=_RED, width=3 * s, lineCap=1,
                                            stroke_opacity=0.8)
 
                     _log("")
@@ -348,32 +352,38 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
 # ── Shape helpers ─────────────────────────────────────────────────────────────
 
 def _draw_checkmark(page, cx_v: float, cy_v: float,
-                    to_draw: Callable[[float, float], Tuple[float, float]]):
-    r = 6
+                    to_draw: Callable[[float, float], Tuple[float, float]],
+                    s: float = 1.0):
+    r = 6 * s
+    thick = 3 * s
     p1 = to_draw(cx_v - r,     cy_v)
     p2 = to_draw(cx_v - r / 3, cy_v + r)
     p3 = to_draw(cx_v + r,     cy_v - r)
     shape = page.new_shape()
     shape.draw_polyline([p1, p2, p3])
-    shape.finish(color=_GREEN, width=2.5, lineCap=1, lineJoin=1,
+    shape.finish(color=_GREEN, width=thick, lineCap=1, lineJoin=1,
                  closePath=False, stroke_opacity=0.8)
     shape.commit()
 
 
 def _draw_cross(page, cx_v: float, cy_v: float,
-                to_draw: Callable[[float, float], Tuple[float, float]]):
-    r = 6
+                to_draw: Callable[[float, float], Tuple[float, float]],
+                s: float = 1.0):
+    r = 6 * s
+    thick = 3 * s
     page.draw_line(to_draw(cx_v - r, cy_v - r), to_draw(cx_v + r, cy_v + r),
-                   color=_RED, width=2.5, lineCap=1, stroke_opacity=0.8)
+                   color=_RED, width=thick, lineCap=1, stroke_opacity=0.8)
     page.draw_line(to_draw(cx_v + r, cy_v - r), to_draw(cx_v - r, cy_v + r),
-                   color=_RED, width=2.5, lineCap=1, stroke_opacity=0.8)
+                   color=_RED, width=thick, lineCap=1, stroke_opacity=0.8)
 
 
 def _draw_tilde(page, cx_v: float, cy_v: float, rot: int,
-                to_draw: Callable[[float, float], Tuple[float, float]]):
+                to_draw: Callable[[float, float], Tuple[float, float]],
+                s: float = 1.0):
     # Draw a smooth S-curve wave (same shape as the screen renderer).
-    amp = 5    # amplitude in visual pts
-    ww  = 18   # half-width on each side of centre
+    amp = 5 * s    # amplitude in visual pts
+    ww  = 18 * s   # half-width on each side of centre
+    thick = 3 * s
     p0  = to_draw(cx_v - ww,     cy_v)
     cp1 = to_draw(cx_v - ww / 2, cy_v - amp)
     cp2 = to_draw(cx_v,          cy_v - amp)
@@ -384,7 +394,7 @@ def _draw_tilde(page, cx_v: float, cy_v: float, rot: int,
     shape = page.new_shape()
     shape.draw_bezier(p0, cp1, cp2, p1)
     shape.draw_bezier(p1, cp3, cp4, p2)
-    shape.finish(color=_ORANGE, width=2.5, lineCap=1, lineJoin=1,
+    shape.finish(color=_ORANGE, width=thick, lineCap=1, lineJoin=1,
                  closePath=False, stroke_opacity=0.8)
     shape.commit()
 
@@ -437,9 +447,11 @@ def _measure_text_box(text: str, box_w: float, p: float = _TEXT_PAD_PT,
 
 
 def _draw_text(page, ann: Annotation, cx_v: float, cy_v: float,
-               pw: float, ph: float, rot: int, mw: float, mh: float):
+               pw: float, ph: float, rot: int, mw: float, mh: float,
+               s: float = 1.0):
     text = ann.text or ""
-    p = _TEXT_PAD_PT
+    fontsize = _TEXT_FONTSIZE * s
+    p = _TEXT_PAD_PT * s
     if ann.width is not None:
         box_w = max(ann.width * pw, 10.0)
     else:
@@ -448,7 +460,7 @@ def _draw_text(page, ann: Annotation, cx_v: float, cy_v: float,
             font = fitz.Font("helv")
             lines = text.split("\n") if text else [""]
             box_w = max(
-                (font.text_length(ln, fontsize=_TEXT_FONTSIZE) for ln in lines),
+                (font.text_length(ln, fontsize=fontsize) for ln in lines),
                 default=0.0,
             ) + p * 2
         except Exception:
@@ -456,7 +468,7 @@ def _draw_text(page, ann: Annotation, cx_v: float, cy_v: float,
         box_w = max(box_w, 20.0)
 
     # Height is always computed from content; never stored.
-    _, measured_box_h = _measure_text_box(text, box_w, p, _TEXT_FONTSIZE)
+    _, measured_box_h = _measure_text_box(text, box_w, p, fontsize)
     box_h = max(measured_box_h, 10.0)
 
     box_rect  = _text_rect(cx_v,     cy_v,     box_w,         box_h,         rot, mw, mh)
@@ -477,17 +489,17 @@ def _draw_text(page, ann: Annotation, cx_v: float, cy_v: float,
     # in the viewer.  Using (360-rot) reversed the direction and produced
     # upside-down text on landscape (rot=90/270) pages.
     text_rotate = rot
-    overflow = page.insert_textbox(text_rect, text, fontsize=_TEXT_FONTSIZE,
+    overflow = page.insert_textbox(text_rect, text, fontsize=fontsize,
                                    fontname="helv", color=(0, 0, 0),
                                    align=0, rotate=text_rotate)
     if overflow < 0:
         # Text still did not fit (e.g. word-wrap produced more lines than
         # measured_box_h estimated).  Re-measure without the stored-height
         # constraint and retry with the freshly computed rect.
-        _, fallback_h = _measure_text_box(text, box_w, p, _TEXT_FONTSIZE)
+        _, fallback_h = _measure_text_box(text, box_w, p, fontsize)
         fallback_rect = _text_rect(cx_v + p, cy_v + p, max(1.0, box_w - p * 2),
                                    max(1.0, fallback_h - p * 2), rot, mw, mh)
-        page.insert_textbox(fallback_rect, text, fontsize=_TEXT_FONTSIZE,
+        page.insert_textbox(fallback_rect, text, fontsize=fontsize,
                             fontname="helv", color=(0, 0, 0),
                             align=0, rotate=text_rotate)
 
