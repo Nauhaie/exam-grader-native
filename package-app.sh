@@ -31,11 +31,19 @@ echo "==> Cleaning previous build artifacts…"
 rm -rf build dist ExamGrader.spec
 
 echo "==> Building…"
+ICON_ARG=""
+if [ -f "icon.png" ]; then
+    ICON_ARG="--icon icon.png"
+elif [ -f "icon.icns" ]; then
+    ICON_ARG="--icon icon.icns"
+fi
 pyinstaller \
     --name "ExamGrader" \
     --windowed \
     --onedir \
     --add-data "sample_project:sample_project" \
+    --add-data "icon.svg:." \
+    $ICON_ARG \
     app/main.py
 
 echo ""

@@ -7,7 +7,6 @@ from PySide6.QtGui import QColor, QFont, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
-    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QHeaderView,
@@ -108,12 +107,6 @@ class GradingPanel(QWidget):
         clear_btn.setFixedWidth(28)
         clear_btn.clicked.connect(self._search.clear)
         top.addWidget(clear_btn)
-
-        self._extra_cb = QCheckBox("Extra fields")
-        self._extra_cb.setToolTip("Show/hide additional CSV columns")
-        self._extra_cb.setChecked(False)
-        self._extra_cb.toggled.connect(self._on_extra_toggled)
-        top.addWidget(self._extra_cb)
         layout.addLayout(top)
 
         self._table = QTableWidget()
@@ -206,13 +199,14 @@ class GradingPanel(QWidget):
             for sq in ex.subquestions:
                 self._subquestions.append(sq)
                 self._exercises_for_sq.append(ex.name)
-        # Enable / disable the extra-fields checkbox based on data availability
-        self._extra_cb.setEnabled(bool(self._extra_field_names()))
         self._rebuild_table()
 
     def set_grading_settings(self, settings: GradingSettings):
         """Update grade-calculation settings and refresh the table."""
         self._grading_settings = settings
+        if settings.show_extra_fields != self._show_extra:
+            self._show_extra = settings.show_extra_fields
+            self._update_search_modes()
         self._rebuild_table()
 
     def exam_max_points(self) -> float:
@@ -232,20 +226,6 @@ class GradingPanel(QWidget):
             for k in s.extra_fields:
                 seen[k] = None
         return list(seen)
-
-    def _on_extra_toggled(self, checked: bool):
-        t0 = time.perf_counter()
-        self._show_extra = checked
-        data_store.dbg(f"extra_fields toggled → {checked}  "
-                       f"({len(self._students)} students, "
-                       f"{len(self._subquestions)} subquestions)")
-        self._update_search_modes()
-        t1 = time.perf_counter()
-        data_store.dbg(f"  _update_search_modes: {(t1 - t0) * 1000:.1f} ms")
-        self._rebuild_table()
-        t2 = time.perf_counter()
-        data_store.dbg(f"  _rebuild_table: {(t2 - t1) * 1000:.1f} ms")
-        data_store.dbg(f"  extra_fields toggle total: {(t2 - t0) * 1000:.1f} ms")
 
     def _on_search_mode_changed(self):
         """Rebuild only when the user has an active filter; otherwise a no-op."""
