@@ -507,6 +507,23 @@ class PDFViewerPanel(QWidget):
         data_store.dbg("[CURSOR] reinstall_viewport_filter called")
         self._scroll.viewport().installEventFilter(self)
 
+    def reset_override_cursor(self):
+        """Reset the override-cursor tracking flag.
+
+        Call after draining the application override-cursor stack so the
+        next ``_set_page_cursor`` call will use ``setOverrideCursor``
+        (push) instead of ``changeOverrideCursor`` (modify-in-place).
+        """
+        self._override_cursor_active = False
+
+    def refresh_cursor(self):
+        """Re-evaluate the cursor shape at the current mouse position.
+
+        Called after the override-cursor stack has been drained and
+        tracking flags reset, so the correct cursor is pushed fresh.
+        """
+        self._refresh_cursor()
+
     def load_pdf(self, pdf_path: Optional[str], annotations: List[Annotation]):
         if self._doc:
             self._doc.close()
@@ -713,12 +730,18 @@ class PDFViewerPanel(QWidget):
     # ── Mouse handlers ────────────────────────────────────────────────────────
 
     def _set_page_cursor(self, shape, reason=""):
-        """Set the cursor via the application override-cursor stack.
+        """Set the cursor via override-cursor stack AND widget-level cursor.
 
-        Using QApplication.setOverrideCursor / changeOverrideCursor instead
-        of widget.setCursor bypasses macOS NSTrackingArea cursor-rect
-        management which can become permanently stale after a full-screen
-        transition, causing widget-level cursors to flicker and revert.
+        Two mechanisms are used simultaneously:
+        1. QApplication override-cursor for immediate, reliable display.
+        2. QWidget.setCursor on the page label so that macOS Cocoa
+           tracking-area ``cursorUpdate:`` callbacks also resolve to the
+           correct cursor shape, even in full-screen mode where the
+           override cursor alone may be overridden by the system.
+
+        ``changeOverrideCursor`` is used (rather than pop+push) to avoid
+        creating a momentary gap with no override cursor that macOS
+        ``cursorUpdate:`` could exploit to flash the arrow cursor.
         """
         global_pos = QCursor.pos()
         local_pos = self._page_label.mapFromGlobal(global_pos)
@@ -729,6 +752,7 @@ class PDFViewerPanel(QWidget):
             f"  reason={reason or 'unspecified'}"
         )
         cursor = QCursor(shape) if not isinstance(shape, QCursor) else shape
+        self._page_label.setCursor(cursor)
         if self._override_cursor_active:
             QApplication.changeOverrideCursor(cursor)
         else:
@@ -736,7 +760,7 @@ class PDFViewerPanel(QWidget):
             self._override_cursor_active = True
 
     def _unset_page_cursor(self, reason=""):
-        """Remove our override cursor, restoring the default."""
+        """Remove our override cursor and widget-level cursor."""
         global_pos = QCursor.pos()
         local_pos = self._page_label.mapFromGlobal(global_pos)
         data_store.dbg(
@@ -745,6 +769,7 @@ class PDFViewerPanel(QWidget):
             f"  global=({global_pos.x()},{global_pos.y()})"
             f"  reason={reason or 'unspecified'}"
         )
+        self._page_label.unsetCursor()
         if self._override_cursor_active:
             QApplication.restoreOverrideCursor()
             self._override_cursor_active = False
