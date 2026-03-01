@@ -6,7 +6,7 @@ import sys
 from typing import List
 
 import openpyxl
-from PySide6.QtCore import QObject, QTimer, Qt
+from PySide6.QtCore import QEvent, QObject, QTimer, Qt
 from PySide6.QtGui import QAction, QCursor
 from PySide6.QtWidgets import (
     QApplication,
@@ -31,6 +31,81 @@ from pdf_viewer import PDFViewerPanel
 from settings_dialog import SettingsDialog
 from setup_dialog import SetupDialog
 
+
+
+def _force_refresh_tracking_areas(widget: QWidget) -> None:
+    """(macOS) Rebuild every NSTrackingArea in the window's native view tree.
+
+    After macOS full-screen / maximize animations the native NSTrackingArea
+    rectangles can become stale, causing the OS to deliver hover and cursor
+    events to the wrong widgets.  Recursively calling ``updateTrackingAreas``
+    on every ``NSView`` under the window's ``contentView`` forces macOS to
+    recalculate the rectangles and eliminates the resulting cursor flicker.
+
+    Uses ``ctypes`` to call into the Objective-C runtime directly so no
+    additional dependencies (e.g. PyObjC) are required.
+    """
+    if sys.platform != "darwin":
+        return
+    try:
+        import ctypes
+        import ctypes.util
+
+        lib_path = ctypes.util.find_library("objc")
+        if not lib_path:
+            return
+        objc = ctypes.cdll.LoadLibrary(lib_path)
+
+        # Typed wrappers around objc_msgSend for different return / arg combos.
+        _msg_ptr = ctypes.CFUNCTYPE(
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p
+        )(("objc_msgSend", objc))
+        _msg_void = ctypes.CFUNCTYPE(
+            None, ctypes.c_void_p, ctypes.c_void_p
+        )(("objc_msgSend", objc))
+        _msg_ulong = ctypes.CFUNCTYPE(
+            ctypes.c_ulong, ctypes.c_void_p, ctypes.c_void_p
+        )(("objc_msgSend", objc))
+        _msg_at = ctypes.CFUNCTYPE(
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+        )(("objc_msgSend", objc))
+
+        _sel = objc.sel_registerName
+        _sel.restype = ctypes.c_void_p
+        _sel.argtypes = [ctypes.c_char_p]
+
+        SEL_window = _sel(b"window")
+        SEL_contentView = _sel(b"contentView")
+        SEL_update = _sel(b"updateTrackingAreas")
+        SEL_subviews = _sel(b"subviews")
+        SEL_count = _sel(b"count")
+        SEL_objectAtIndex = _sel(b"objectAtIndex:")
+
+        ns_view = ctypes.c_void_p(int(widget.winId()))
+        ns_window = _msg_ptr(ns_view, SEL_window)
+        if not ns_window:
+            return
+        content = _msg_ptr(ns_window, SEL_contentView)
+        if not content:
+            return
+
+        def _walk(view: ctypes.c_void_p) -> None:
+            _msg_void(view, SEL_update)
+            children = _msg_ptr(view, SEL_subviews)
+            if not children:
+                return
+            n = _msg_ulong(children, SEL_count)
+            for i in range(n):
+                child = _msg_at(children, SEL_objectAtIndex, i)
+                if child:
+                    _walk(child)
+
+        _walk(content)
+    except Exception:
+        pass
 
 
 class _SplitterCursorTracker(QObject):
@@ -147,6 +222,24 @@ class MainWindow(QMainWindow):
 
         if sys.platform == "darwin":
             self._splitter_cursor_tracker = _SplitterCursorTracker(splitter, parent=self)
+
+    # ------------------------------------------------------------------
+    # macOS: force-refresh native NSTrackingAreas after window-state
+    # animations (full-screen enter/exit, maximize).  This is the root-
+    # cause fix for the splitter-cursor flicker described in the issue.
+    # ------------------------------------------------------------------
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if (
+            sys.platform == "darwin"
+            and event.type() == QEvent.Type.WindowStateChange
+        ):
+            # Stagger across the ~0.5-1 s macOS animation window.
+            for delay_ms in (300, 600, 1000):
+                QTimer.singleShot(delay_ms, self._refresh_tracking_areas)
+
+    def _refresh_tracking_areas(self) -> None:
+        _force_refresh_tracking_areas(self)
 
     def _load_session(self):
         data_store.dbg("Loading previous session…")
