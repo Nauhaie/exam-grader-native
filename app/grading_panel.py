@@ -671,15 +671,8 @@ class GradingPanel(QWidget):
     # ── Frozen overlay helpers (sticky header rows + Student/Number cols) ─────
 
     def eventFilter(self, obj, event):
-        if obj is self._table.viewport():
-            t = event.type()
-            if t == QEvent.Type.Resize:
-                QTimer.singleShot(0, self._update_frozen_geometry)
-            # Suppress spurious hover events so that Qt's internal handler does
-            # not reset the application cursor to ArrowCursor (which fights the
-            # QSplitter's resize cursor on macOS full-screen).
-            elif t in (QEvent.Type.HoverMove, QEvent.Type.HoverLeave):
-                return True
+        if obj is self._table.viewport() and event.type() == QEvent.Type.Resize:
+            QTimer.singleShot(0, self._update_frozen_geometry)
         # Forward wheel events from frozen overlays to the main table viewport
         # so that scrolling over sticky headers/columns stays synchronised.
         if event.type() == QEvent.Type.Wheel:
