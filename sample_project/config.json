@@ -6,7 +6,9 @@
     "score_total": null,
     "debug_mode": false,
     "cover_page_detail": false,
-    "hi_dpr": false
+    "hi_dpr": false,
+    "grading_separate_window": false,
+    "show_extra_fields": false
   },
   "preset_annotations": [
     "Justification...",

@@ -1,0 +1,46 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4F46E5"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="224" height="224" rx="40" fill="url(#bgGradient)"/>
+
+  <!-- Exam paper -->
+  <rect x="64" y="48" width="128" height="160" rx="12" fill="white" opacity="0.95"/>
+
+  <!-- Adjusted gray lines -->
+  <!-- 1st & 2nd: same left start (x=84), centered visually -->
+  <rect x="84" y="80" width="88" height="8" rx="4" fill="#CBD5E1"/>
+  <rect x="84" y="104" width="88" height="8" rx="4" fill="#CBD5E1"/>
+
+  <!-- 3rd: shorter -->
+  <rect x="84" y="128" width="60" height="8" rx="4" fill="#CBD5E1"/>
+
+  <!-- 4th: about half length -->
+  <rect x="84" y="152" width="40" height="8" rx="4" fill="#CBD5E1"/>
+
+  <!-- Large green checkmark -->
+  <path d="M88 168 L116 196 L176 128"
+        fill="none"
+        stroke="#16A34A"
+        stroke-width="14"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+
+  <!-- Smaller red X mark -->
+  <path d="M108 82 L134 108 M134 82 L108 108"
+        fill="none"
+        stroke="#DC2626"
+        stroke-width="10"
+        stroke-linecap="round"/>
+
+  <!-- Subtle top highlight -->
+  <rect x="16" y="16" width="224" height="224" rx="40"
+        fill="none"
+        stroke="white"
+        stroke-opacity="0.15"
+        stroke-width="4"/>
+</svg>
