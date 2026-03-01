@@ -6,7 +6,7 @@ import sys
 from typing import List
 
 import openpyxl
-from PySide6.QtCore import QEvent, Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
@@ -31,6 +31,21 @@ from pdf_viewer import PDFViewerPanel
 from settings_dialog import SettingsDialog
 from setup_dialog import SetupDialog
 
+
+
+class _HoverSuppressor(QObject):
+    """Event filter that swallows HoverMove/HoverLeave events.
+
+    Installing this on a widget's viewport prevents Qt's internal handler from
+    resetting the application cursor to ArrowCursor in response to spurious
+    hover events (e.g. stale NSTrackingArea rects after macOS full-screen
+    transitions), which would otherwise fight the QSplitter resize cursor.
+    """
+
+    def eventFilter(self, obj, event):
+        if event.type() in (QEvent.Type.HoverMove, QEvent.Type.HoverLeave):
+            return True
+        return super().eventFilter(obj, event)
 
 
 class _EmptyDefault(dict):
@@ -98,35 +113,10 @@ class MainWindow(QMainWindow):
 
         splitter.setSizes([600, 800])
 
-    def changeEvent(self, event: QEvent) -> None:
-        super().changeEvent(event)
-        if (sys.platform == "darwin"
-                and event.type() == QEvent.Type.WindowStateChange):
-            # After a full-screen transition the NSTrackingArea cursor rects
-            # become stale; reschedule a resync once the animation settles.
-            QTimer.singleShot(750, self._resync_cursors)
-
-    def _resync_cursors(self) -> None:
-        """Force Qt to recreate NSTrackingArea rects after a window-state transition.
-
-        Walks the MainWindow and every descendant widget, cycling each one
-        through unsetCursor()/setCursor() so that Qt completely tears down and
-        rebuilds the native macOS NSTrackingArea rectangles for the whole
-        interface, eliminating the stale-rect cursor flicker that appears after
-        full-screen or maximise animations.
-        """
-        for widget in [self] + list(self.findChildren(QWidget)):
-            if widget.testAttribute(Qt.WidgetAttribute.WA_SetCursor):
-                # Widget has an explicit cursor; cycle it to force an
-                # NSTrackingArea rebuild while preserving the cursor shape.
-                saved = widget.cursor()
-                widget.unsetCursor()
-                widget.setCursor(saved)
-            else:
-                # No custom cursor; unsetCursor() alone invalidates any
-                # stale tracking-area state without breaking the
-                # parent-to-child cursor-inheritance chain.
-                widget.unsetCursor()
+        # Suppress spurious hover events on the splitter handle so that Qt does
+        # not reset the application cursor while the user drags the divider.
+        self._hover_suppressor = _HoverSuppressor(self)
+        splitter.handle(1).installEventFilter(self._hover_suppressor)
 
     def _load_session(self):
         data_store.dbg("Loading previous session…")
