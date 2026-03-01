@@ -107,11 +107,26 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(750, self._resync_cursors)
 
     def _resync_cursors(self) -> None:
-        """Force Qt to recreate NSTrackingArea rects after a window-state transition."""
-        handle = self._splitter.handle(1)
-        old_cursor = handle.cursor()
-        handle.unsetCursor()
-        handle.setCursor(old_cursor)
+        """Force Qt to recreate NSTrackingArea rects after a window-state transition.
+
+        Walks the MainWindow and every descendant widget, cycling each one
+        through unsetCursor()/setCursor() so that Qt completely tears down and
+        rebuilds the native macOS NSTrackingArea rectangles for the whole
+        interface, eliminating the stale-rect cursor flicker that appears after
+        full-screen or maximise animations.
+        """
+        for widget in [self] + list(self.findChildren(QWidget)):
+            if widget.testAttribute(Qt.WidgetAttribute.WA_SetCursor):
+                # Widget has an explicit cursor; cycle it to force an
+                # NSTrackingArea rebuild while preserving the cursor shape.
+                saved = widget.cursor()
+                widget.unsetCursor()
+                widget.setCursor(saved)
+            else:
+                # No custom cursor; unsetCursor() alone invalidates any
+                # stale tracking-area state without breaking the
+                # parent-to-child cursor-inheritance chain.
+                widget.unsetCursor()
 
     def _load_session(self):
         data_store.dbg("Loading previous session…")
