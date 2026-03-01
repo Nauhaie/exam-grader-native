@@ -802,6 +802,10 @@ class PDFViewerPanel(QWidget):
     def _update_hover_cursor(self, fx: float, fy: float):
         """Update cursor shape based on what's under *(fx, fy)* when no tool
         is active (or eraser is active)."""
+        # Cmd/Ctrl held → show open-hand to indicate pan-ready
+        if QApplication.queryKeyboardModifiers() & _PAN_MOD:
+            self._page_label.setCursor(Qt.CursorShape.OpenHandCursor)
+            return
         if self._active_tool == TOOL_ERASER:
             self._page_label.setCursor(_make_eraser_cursor())
             w, h = self._page_size()
@@ -862,6 +866,7 @@ class PDFViewerPanel(QWidget):
             self._pan_origin = (cur.x(), cur.y())
             self._pan_hval = self._scroll.horizontalScrollBar().value()
             self._pan_vval = self._scroll.verticalScrollBar().value()
+            self._page_label.setCursor(Qt.CursorShape.ClosedHandCursor)
             return
         if self._active_tool in (TOOL_NONE, None):
             drag = self._find_drag_target(fx, fy)
@@ -902,6 +907,7 @@ class PDFViewerPanel(QWidget):
         # End pan
         if self._pan_origin is not None:
             self._pan_origin = None
+            self._update_cursor_for_tool()
             return
         if self._drag is not None:
             self._apply_drag(fx, fy)

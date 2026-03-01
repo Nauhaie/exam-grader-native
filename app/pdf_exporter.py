@@ -238,7 +238,8 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                     page_anns = [a for a in annotations if a.page == page_idx]
                     _log(f"  annotations    : {len(page_anns)}")
 
-                    # Scale factor: match the UI which scales relative to A4
+                    # Scale factor: match the UI overlay which uses
+                    # s = img_height / 842.0  (842 pt = A4 long side at 72 dpi)
                     s = ph / 842.0
 
                     for ann_i, ann in enumerate(page_anns):
