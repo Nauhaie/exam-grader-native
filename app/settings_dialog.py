@@ -10,6 +10,7 @@ Combines:
 from typing import List, Optional
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -191,7 +192,10 @@ class SettingsDialog(QDialog):
         placeholders_edit.setReadOnly(True)
         placeholders_edit.setStyleSheet(
             "color: #333; background: #f0f0f0; border: 1px solid #ccc; "
-            "padding: 4px; font-family: monospace;"
+            "padding: 4px;"
+        )
+        placeholders_edit.setFont(
+            QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
         )
         placeholders_edit.setToolTip("Select a placeholder and copy-paste it into the template above")
         layout.addWidget(placeholders_edit)

@@ -48,9 +48,20 @@ class _HighlightDelegate(QStyledItemDelegate):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._highlight_row: int = -1
+        self._editor_opened_callback = None  # optional callback(row, col)
 
     def set_highlight_row(self, row: int):
         self._highlight_row = row
+
+    def set_editor_opened_callback(self, callback):
+        """Set a callback invoked with (row, col) whenever an editor is created."""
+        self._editor_opened_callback = callback
+
+    def createEditor(self, parent, option, index):
+        editor = super().createEditor(parent, option, index)
+        if editor is not None and self._editor_opened_callback is not None:
+            self._editor_opened_callback(index.row(), index.column())
+        return editor
 
     def paint(self, painter, option: QStyleOptionViewItem, index):
         # Suppress the built-in selection fill so grade colours are not overridden.
@@ -129,6 +140,7 @@ class GradingPanel(QWidget):
         # Each view gets its own instance so Qt's commitData signal is not
         # forwarded to a view that did not create the editor.
         self._highlight_delegate = _HighlightDelegate(self._table)
+        self._highlight_delegate.set_editor_opened_callback(self._on_cell_editor_opened)
         self._table.setItemDelegate(self._highlight_delegate)
 
         layout.addWidget(self._table)
@@ -704,6 +716,21 @@ class GradingPanel(QWidget):
         self._fill_average_row(filtered)
         self._table.blockSignals(False)
         self._rebuilding = False
+
+    def _on_cell_editor_opened(self, row: int, col: int):
+        """Called whenever an editor is opened for (row, col); update _last_focus."""
+        if row < _HEADER_ROWS:
+            return
+        data_row = row - _HEADER_ROWS
+        filtered = self._filtered_students()
+        if data_row >= len(filtered):
+            return
+        sq_start = 2
+        sq_end = sq_start + len(self._subquestions)
+        if sq_start <= col < sq_end:
+            student = filtered[data_row]
+            sq = self._subquestions[col - sq_start]
+            self._last_focus[student.student_number] = sq.name
 
     def _on_cell_clicked(self, row: int, col: int):
         # Ignore clicks on the 3 frozen header rows

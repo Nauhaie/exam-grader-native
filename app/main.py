@@ -113,12 +113,14 @@ class MainWindow(QMainWindow):
                         f"Could not restore previous session:\n{exc}\n\nPlease open a project."
                     )
         data_store.dbg("No previous session found, showing setup dialog")
-        self._show_setup()
+        self._show_setup(quit_on_cancel=True)
 
-    def _show_setup(self):
+    def _show_setup(self, quit_on_cancel: bool = False):
         dlg = SetupDialog(self)
         if dlg.exec():
             self._apply_project(dlg.project_dir())
+        elif quit_on_cancel:
+            QApplication.instance().quit()
 
     def _apply_project(self, project_dir: str):
         t0 = time.perf_counter()
