@@ -71,8 +71,14 @@ _INLINE_EDITOR_WIDTH  = 200
 _POINT_TOOLS = {TOOL_CHECKMARK, TOOL_CROSS, TOOL_TILDE}
 
 
+_ERASER_CURSOR: Optional[QCursor] = None
+
+
 def _make_eraser_cursor() -> QCursor:
-    """Create a custom eraser cursor (small circle with an 'x')."""
+    """Create (or return cached) custom eraser cursor (small circle with an 'x')."""
+    global _ERASER_CURSOR
+    if _ERASER_CURSOR is not None:
+        return _ERASER_CURSOR
     size = 24
     pm = QPixmap(size, size)
     pm.fill(QColor(0, 0, 0, 0))
@@ -87,7 +93,8 @@ def _make_eraser_cursor() -> QCursor:
     p.drawLine(m, m, size - m, size - m)
     p.drawLine(size - m, m, m, size - m)
     p.end()
-    return QCursor(pm, size // 2, size // 2)
+    _ERASER_CURSOR = QCursor(pm, size // 2, size // 2)
+    return _ERASER_CURSOR
 
 
 def _pm_logical_size(pm: Optional[QPixmap]) -> Tuple[int, int]:
@@ -440,7 +447,6 @@ class PDFViewerPanel(QWidget):
         self._preset_annotations: List[str] = []
         self._stamp_popup: Optional[QWidget] = None
         self._hi_dpr: bool = True
-        self._eraser_cursor: QCursor = _make_eraser_cursor()
         self._hover_pos: Optional[Tuple[float, float]] = None  # mouse pos for point-tool preview
         # Pre-render cache: { page_index: QPixmap }
         self._page_cache: Dict[int, QPixmap] = {}
@@ -599,6 +605,7 @@ class PDFViewerPanel(QWidget):
         self.load_pdf(None, [])
 
     def set_active_tool(self, tool: Optional[str]):
+        had_preview = self._hover_pos is not None or self._preview_pos is not None
         if tool != self._active_tool:
             self._line_start = None
             self._preview_pos = None
@@ -609,6 +616,8 @@ class PDFViewerPanel(QWidget):
         for t, btn in self._tool_buttons.items():
             btn.setChecked(t == tool)
         self._update_cursor_for_tool()
+        if had_preview:
+            self._update_display()
 
     def deselect_tool(self):
         self.set_active_tool(TOOL_NONE)
@@ -750,7 +759,6 @@ class PDFViewerPanel(QWidget):
         """Compose base + optional preview, push to screen."""
         if self._base_pixmap is None:
             return
-        display = self._base_pixmap
         if (self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE, TOOL_RECTCROSS)
                 and self._line_start is not None
                 and self._preview_pos is not None):
@@ -765,6 +773,8 @@ class PDFViewerPanel(QWidget):
             annotation_overlay.draw_marker_preview(
                 display, self._active_tool, self._hover_pos,
             )
+        else:
+            display = self._base_pixmap
         self._page_label.setPixmap(display)
         dpr = display.devicePixelRatio()
         self._page_label.resize(
@@ -776,7 +786,7 @@ class PDFViewerPanel(QWidget):
     def _update_cursor_for_tool(self):
         """Set the page-label cursor based on the currently active tool."""
         if self._active_tool == TOOL_ERASER:
-            self._page_label.setCursor(self._eraser_cursor)
+            self._page_label.setCursor(_make_eraser_cursor())
         elif self._active_tool in (TOOL_NONE, None):
             self._page_label.setCursor(Qt.CursorShape.ArrowCursor)
         else:
@@ -786,7 +796,7 @@ class PDFViewerPanel(QWidget):
         """Update cursor shape based on what's under *(fx, fy)* when no tool
         is active (or eraser is active)."""
         if self._active_tool == TOOL_ERASER:
-            self._page_label.setCursor(self._eraser_cursor)
+            self._page_label.setCursor(_make_eraser_cursor())
             return
         if self._active_tool not in (TOOL_NONE, None):
             return  # tool cursor already set by _update_cursor_for_tool
@@ -1347,6 +1357,7 @@ class PDFViewerPanel(QWidget):
         """Clear in-progress interaction state (used on page changes)."""
         self._line_start = None
         self._preview_pos = None
+        self._hover_pos = None
         self._drag = None
         self._cancel_inline_editor()
 
