@@ -88,8 +88,13 @@ shown in the grading panel.
 
 1. Select a student from the grading table (right panel) or use **Shift+Alt+←/→**.
 2. Use the annotation tools in the PDF toolbar (left panel) to mark the exam.
-3. Enter scores directly in the grading table cells (double-click or just type).
-4. Press **P** to jump focus back to the current student's grading row.
+3. Enter scores directly in the grading table cells (single click or just type).
+   French-style decimal commas are accepted (`1,5` is automatically converted to `1.5`).
+4. Press **P** to jump focus back to the current student's grading row:
+   - If no cell has been edited yet for this student → jumps to the **first** grading cell.
+   - If the last-edited cell is **empty** → jumps back to that cell so you can fill it in.
+   - If the last-edited cell is **filled** → advances to the **next** grading cell
+     (stays on the last grading column if already at the end).
 5. Everything is auto-saved continuously.
 
 ---
@@ -129,7 +134,7 @@ For circles, drag the blue handle at the bottom to resize, or drag the circumfer
 | **→** / **←** | Next / previous page **(only when the PDF fits the view without scrollbars)** |
 | **Shift + Alt + →** | Next student |
 | **Shift + Alt + ←** | Previous student |
-| **P** | Jump grading focus to current student |
+| **P** | Jump grading focus to current student (see [Grading workflow](#grading-workflow) for details) |
 | **Ctrl + scroll** | Zoom in / out |
 | Pinch gesture (macOS) | Zoom in / out |
 
@@ -164,6 +169,27 @@ For circles, drag the blue handle at the bottom to resize, or drag the circumfer
 The students CSV may contain any additional columns beyond the three required
 ones.  In the grading panel click **Extra fields** to toggle their display as
 read-only columns.  Extra fields are also searchable from the filter box.
+
+---
+
+## Settings
+
+Open via **Project → Settings…**.  The dialog has five tabs:
+
+| Tab | Contents |
+|-----|----------|
+| **Grading** | Max note, rounding step, score total (auto or manual) |
+| **Export** | Filename template for annotated PDFs, cover page detail level |
+| **Grading Scheme** | Exercise / subquestion editor (names & max points) |
+| **Preset Annotations** | Manage the text presets used by the Stamp tool (S) |
+| **Advanced** | Debug mode, high-DPI rendering, grading sheet in separate window |
+
+### Grading sheet in separate window
+
+Enable **"Grading sheet in separate window"** in the Advanced tab to detach the
+grading spreadsheet into its own window.  This is especially useful for
+dual-monitor setups: keep the PDF viewer on one screen and the grading table on
+the other.  Disabling the option moves the table back into the main window.
 
 ---
 
@@ -218,7 +244,7 @@ app/
   grading_panel.py     – grade-entry spreadsheet
   data_store.py        – load/save sessions, students, grades, annotations
   models.py            – data classes
-  settings_dialog.py   – unified settings dialog (grading, export, scheme, presets)
+  settings_dialog.py   – unified settings dialog (grading, export, scheme, presets, advanced)
   setup_dialog.py      – project-open dialog
 sample_project/        – example project (copy and fill exams/ with your PDFs)
 requirements.txt
