@@ -627,10 +627,15 @@ class GradingPanel(QWidget):
                 self._table.clearSelection()
                 self._table.viewport().update()
                 self._fz_left.viewport().update()
+                # Scroll vertically to make the highlighted row visible, but
+                # preserve the horizontal scroll position so the user's current
+                # column stays in view.
+                h_val = self._table.horizontalScrollBar().value()
                 self._table.scrollToItem(
                     self._table.item(r, 0),
                     QAbstractItemView.ScrollHint.EnsureVisible,
                 )
+                self._table.horizontalScrollBar().setValue(h_val)
                 return
         self._highlight_delegate.set_highlight_row(-1)
         self._fz_left_highlight_delegate.set_highlight_row(-1)
@@ -750,10 +755,13 @@ class GradingPanel(QWidget):
         if sq_start <= col < sq_end:
             sq = self._subquestions[col - sq_start]
             self._last_focus[student.student_number] = sq.name
-            # Single click → immediately enter edit mode for grading cells
+            # Single click → immediately enter edit mode for grading cells.
+            # Defer via singleShot so any currently-active editor is committed
+            # and destroyed first (avoids the "edit: editing failed" warning
+            # when the user clicks a different cell on the same row).
             item = self._table.item(row, col)
             if item is not None:
-                self._table.editItem(item)
+                QTimer.singleShot(0, lambda captured=item: self._table.editItem(captured))
         if (self._current_student is None
                 or student.student_number != self._current_student.student_number):
             self.student_selected.emit(student)
