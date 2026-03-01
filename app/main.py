@@ -6,8 +6,8 @@ import sys
 from typing import List
 
 import openpyxl
-from PySide6.QtCore import QEvent, QObject, Qt
-from PySide6.QtGui import QAction
+from PySide6.QtCore import QObject, QTimer, Qt
+from PySide6.QtGui import QAction, QCursor
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -33,19 +33,51 @@ from setup_dialog import SetupDialog
 
 
 
-class _HoverSuppressor(QObject):
-    """Event filter that swallows HoverMove/HoverLeave events.
+class _SplitterCursorTracker(QObject):
+    """Keep splitter resize cursor stable on macOS after window state animations."""
 
-    Installing this on a widget's viewport prevents Qt's internal handler from
-    resetting the application cursor to ArrowCursor in response to spurious
-    hover events (e.g. stale NSTrackingArea rects after macOS full-screen
-    transitions), which would otherwise fight the QSplitter resize cursor.
-    """
+    _CURSOR_POLL_INTERVAL_MS = 1000 // 30  # ~30 FPS cursor polling.
 
-    def eventFilter(self, obj, event):
-        if event.type() in (QEvent.Type.HoverMove, QEvent.Type.HoverLeave):
-            return True
-        return super().eventFilter(obj, event)
+    def __init__(self, splitter: QSplitter, handle_index: int = 1, parent=None):
+        super().__init__(parent)
+        self._splitter = splitter
+        self._handle_index = handle_index
+        self._owns_cursor = False
+        self._timer = QTimer(self)
+        self._timer.setInterval(self._CURSOR_POLL_INTERVAL_MS)
+        self._timer.timeout.connect(self._sync_cursor)
+        self._timer.start()
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._release_cursor)
+
+    def _pointer_on_handle(self) -> bool:
+        handle = self._splitter.handle(self._handle_index)
+        if handle is None or not handle.isVisible():
+            return False
+        return handle.rect().contains(handle.mapFromGlobal(QCursor.pos()))
+
+    def _sync_cursor(self) -> None:
+        if not self._splitter.isVisible():
+            self._release_cursor()
+            return
+        if self._pointer_on_handle():
+            cursor = QApplication.overrideCursor()
+            if self._owns_cursor:
+                if cursor is None or cursor.shape() != Qt.CursorShape.SplitHCursor:
+                    self._owns_cursor = False
+            if not self._owns_cursor and cursor is None:
+                QApplication.setOverrideCursor(Qt.CursorShape.SplitHCursor)
+                self._owns_cursor = True
+        else:
+            self._release_cursor()
+
+    def _release_cursor(self) -> None:
+        if self._owns_cursor:
+            cursor = QApplication.overrideCursor()
+            if cursor is not None and cursor.shape() == Qt.CursorShape.SplitHCursor:
+                QApplication.restoreOverrideCursor()
+            self._owns_cursor = False
 
 
 class _EmptyDefault(dict):
@@ -113,10 +145,8 @@ class MainWindow(QMainWindow):
 
         splitter.setSizes([600, 800])
 
-        # Suppress spurious hover events on the splitter handle so that Qt does
-        # not reset the application cursor while the user drags the divider.
-        self._hover_suppressor = _HoverSuppressor(self)
-        splitter.handle(1).installEventFilter(self._hover_suppressor)
+        if sys.platform == "darwin":
+            self._splitter_cursor_tracker = _SplitterCursorTracker(splitter, parent=self)
 
     def _load_session(self):
         data_store.dbg("Loading previous session…")
