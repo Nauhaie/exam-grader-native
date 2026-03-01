@@ -58,6 +58,12 @@ class SetupDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+        self._dir_edit.textChanged.connect(self._update_open_btn)
+        self._update_open_btn(self._dir_edit.text())
+
+    def _update_open_btn(self, text: str):
+        self._start_btn.setEnabled(os.path.isdir(text.strip()))
+
     def _browse(self):
         path = QFileDialog.getExistingDirectory(self, "Select Project Directory",
                                                 self._dir_edit.text())
