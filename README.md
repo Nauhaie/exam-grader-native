@@ -231,6 +231,20 @@ bash package-app.sh
 | Windows | `dist/ExamGrader/ExamGrader.exe` |
 | Linux | `dist/ExamGrader/ExamGrader` |
 
+### Icon management
+
+`icon.svg`, `icon.png` and `icon.icns` are already committed to the repository,
+so no action is needed in normal development.
+
+Only run `convert-icon.sh` if you change `icon.svg`, then commit the
+regenerated `icon.png` / `icon.icns`:
+
+```bash
+bash convert-icon.sh
+```
+
+See `convert-icon.sh` for tool requirements and details.
+
 ---
 
 ## Project structure

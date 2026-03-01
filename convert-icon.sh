@@ -2,7 +2,12 @@
 # convert-icon.sh – Convert icon.svg into the platform icon formats used by
 # run.sh (window icon) and package-app.sh (PyInstaller --icon).
 #
+# Usage:
+#   bash convert-icon.sh
+#
 # Run this once whenever icon.svg changes, then commit the generated files.
+# (icon.png and icon.icns are already committed; no need to run this unless
+# you modify icon.svg.)
 #
 # Outputs:
 #   icon.png        256×256 PNG  – used by PyInstaller on Linux / Windows,
