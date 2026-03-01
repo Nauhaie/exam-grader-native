@@ -17,16 +17,17 @@ Potential faster alternatives (for future evaluation):
 """
 import math
 import os
+import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 import fitz  # pymupdf
-from PySide6.QtCore import QObject, QEvent, QPoint, QRect, Qt, QTimer, Signal
-from PySide6.QtGui import QCursor, QFont, QImage, QPixmap
+from PySide6.QtCore import QObject, QEvent, QPoint, QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QCursor, QFont, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
-    QApplication, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QApplication, QHBoxLayout, QLabel, QLayout, QLineEdit, QListWidget,
     QListWidgetItem, QPlainTextEdit, QPushButton, QScrollArea,
-    QVBoxLayout, QWidget,
+    QSizePolicy, QVBoxLayout, QWidget, QWidgetItem,
 )
 
 import annotation_overlay
@@ -65,6 +66,35 @@ _PAN_MOD = Qt.KeyboardModifier.MetaModifier | Qt.KeyboardModifier.ControlModifie
 
 _INLINE_EDITOR_MIN_W  = 120
 _INLINE_EDITOR_WIDTH  = 200
+
+# Point-placement tools that show a ghost preview before clicking
+_POINT_TOOLS = {TOOL_CHECKMARK, TOOL_CROSS, TOOL_TILDE}
+
+
+_ERASER_CURSOR: Optional[QCursor] = None
+
+
+def _make_eraser_cursor() -> QCursor:
+    """Create (or return cached) custom eraser cursor (small circle with an 'x')."""
+    global _ERASER_CURSOR
+    if _ERASER_CURSOR is not None:
+        return _ERASER_CURSOR
+    size = 24
+    pm = QPixmap(size, size)
+    pm.fill(QColor(0, 0, 0, 0))
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    # outer circle
+    p.setPen(QPen(QColor(200, 40, 40), 2))
+    p.drawEllipse(2, 2, size - 4, size - 4)
+    # inner x
+    m = 6
+    p.setPen(QPen(QColor(200, 40, 40), 2))
+    p.drawLine(m, m, size - m, size - m)
+    p.drawLine(size - m, m, m, size - m)
+    p.end()
+    _ERASER_CURSOR = QCursor(pm, size // 2, size // 2)
+    return _ERASER_CURSOR
 
 
 def _pm_logical_size(pm: Optional[QPixmap]) -> Tuple[int, int]:
@@ -273,6 +303,75 @@ class _ToolShortcutFilter(QObject):
         return False
 
 
+class _FlowLayout(QLayout):
+    """Simple flow layout: items wrap to the next row when they don't fit."""
+
+    def __init__(self, parent=None, h_spacing=4, v_spacing=2):
+        super().__init__(parent)
+        self._h_spacing = h_spacing
+        self._v_spacing = v_spacing
+        self._items: list = []
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def expandingDirections(self):
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._do_layout(QRect(0, 0, width, 0), test_only=True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._do_layout(rect, test_only=False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        w = h = 0
+        for item in self._items:
+            w = max(w, item.minimumSize().width())
+            h = max(h, item.minimumSize().height())
+        m = self.contentsMargins()
+        return QSize(w + m.left() + m.right(), h + m.top() + m.bottom())
+
+    def _do_layout(self, rect, test_only):
+        m = self.contentsMargins()
+        effective = rect.adjusted(m.left(), m.top(), -m.right(), -m.bottom())
+        x = effective.x()
+        y = effective.y()
+        row_h = 0
+        for item in self._items:
+            w = item.sizeHint().width()
+            h = item.sizeHint().height()
+            if x + w > effective.right() + 1 and x > effective.x():
+                x = effective.x()
+                y += row_h + self._v_spacing
+                row_h = 0
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), item.sizeHint()))
+            x += w + self._h_spacing
+            row_h = max(row_h, h)
+        return y + row_h - rect.y() + m.bottom()
+
+
 class ClickableLabel(QLabel):
     """QLabel that emits fractional-coordinate mouse signals."""
 
@@ -348,6 +447,7 @@ class PDFViewerPanel(QWidget):
         self._preset_annotations: List[str] = []
         self._stamp_popup: Optional[QWidget] = None
         self._hi_dpr: bool = True
+        self._hover_pos: Optional[Tuple[float, float]] = None  # mouse pos for point-tool preview
         # Pre-render cache: { page_index: QPixmap }
         self._page_cache: Dict[int, QPixmap] = {}
         self._cache_zoom: float = 0.0  # zoom level the cache was built at
@@ -358,8 +458,14 @@ class PDFViewerPanel(QWidget):
 
         # ── Toolbar ──────────────────────────────────────────────────────────
         toolbar = QWidget()
-        tb = QHBoxLayout(toolbar)
+        tb = _FlowLayout(toolbar, h_spacing=4, v_spacing=2)
         tb.setContentsMargins(4, 4, 4, 4)
+
+        # Tool buttons group
+        tools_group = QWidget()
+        tg = QHBoxLayout(tools_group)
+        tg.setContentsMargins(0, 0, 0, 0)
+        tg.setSpacing(2)
 
         self._tool_buttons: Dict[str, QPushButton] = {}
         for tool_id, label, tip in [
@@ -379,32 +485,38 @@ class PDFViewerPanel(QWidget):
             btn.setCheckable(True)
             btn.setFixedWidth(36)
             btn.clicked.connect(lambda checked, t=tool_id: self._on_tool_clicked(t, checked))
-            tb.addWidget(btn)
+            tg.addWidget(btn)
             self._tool_buttons[tool_id] = btn
+        tools_group.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        tb.addWidget(tools_group)
 
-        tb.addStretch()
+        # Nav + zoom group
+        nav_group = QWidget()
+        ng = QHBoxLayout(nav_group)
+        ng.setContentsMargins(0, 0, 0, 0)
+        ng.setSpacing(4)
 
-        # ── Page navigation (in toolbar) ──────────────────────────────────────
+        # ── Page navigation ──
         self._prev_btn = QPushButton("◀")
         self._prev_btn.setToolTip("Previous page")
         self._prev_btn.setFixedWidth(32)
         self._prev_btn.clicked.connect(self.prev_page)
-        tb.addWidget(self._prev_btn)
+        ng.addWidget(self._prev_btn)
 
         self._page_counter = QLabel("Page 1 / 1")
         self._page_counter.setFixedWidth(80)
         self._page_counter.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        tb.addWidget(self._page_counter)
+        ng.addWidget(self._page_counter)
 
         self._next_btn = QPushButton("▶")
         self._next_btn.setToolTip("Next page")
         self._next_btn.setFixedWidth(32)
         self._next_btn.clicked.connect(self.next_page)
-        tb.addWidget(self._next_btn)
+        ng.addWidget(self._next_btn)
 
-        tb.addStretch()
+        ng.addSpacing(12)
 
-        # ── Zoom controls (in toolbar) ────────────────────────────────────────
+        # ── Zoom controls ──
         for label, tip, slot in [
             ("−", "Zoom out", self._zoom_out),
             ("+", "Zoom in",  self._zoom_in),
@@ -414,13 +526,15 @@ class PDFViewerPanel(QWidget):
             b.setToolTip(tip)
             b.clicked.connect(slot)
             if label == "−":
-                tb.addWidget(b)
+                ng.addWidget(b)
                 self._zoom_label = QLabel("120%")
                 self._zoom_label.setFixedWidth(50)
                 self._zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                tb.addWidget(self._zoom_label)
+                ng.addWidget(self._zoom_label)
             else:
-                tb.addWidget(b)
+                ng.addWidget(b)
+        nav_group.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        tb.addWidget(nav_group)
 
         layout.addWidget(toolbar)
 
@@ -457,6 +571,7 @@ class PDFViewerPanel(QWidget):
         self._current_page = 0
         self._line_start = None
         self._preview_pos = None
+        self._hover_pos = None
         self._drag = None
         self._cancel_inline_editor()
         self._close_stamp_popup()
@@ -490,14 +605,19 @@ class PDFViewerPanel(QWidget):
         self.load_pdf(None, [])
 
     def set_active_tool(self, tool: Optional[str]):
+        had_preview = self._hover_pos is not None or self._preview_pos is not None
         if tool != self._active_tool:
             self._line_start = None
             self._preview_pos = None
+            self._hover_pos = None
             self._close_stamp_popup()
             data_store.dbg(f"Tool changed: {self._active_tool!r} → {tool!r}")
         self._active_tool = tool
         for t, btn in self._tool_buttons.items():
             btn.setChecked(t == tool)
+        self._update_cursor_for_tool()
+        if had_preview:
+            self._update_display()
 
     def deselect_tool(self):
         self.set_active_tool(TOOL_NONE)
@@ -555,6 +675,8 @@ class PDFViewerPanel(QWidget):
         if not self._doc:
             self._show_placeholder()
             return
+        t0 = time.perf_counter()
+        data_store.dbg(f"Start rendering page {self._current_page + 1}")
         n = self._doc.page_count
         self._page_counter.setText(f"Page {self._current_page + 1} / {n}")
         self._prev_btn.setEnabled(self._current_page > 0)
@@ -583,6 +705,8 @@ class PDFViewerPanel(QWidget):
         self._raw_pixmap = raw
         self._zoom_label.setText(f"{int(self._zoom * 100)}%")
         self._rebuild_base_and_display()
+        elapsed = time.perf_counter() - t0
+        data_store.dbg(f"Page {self._current_page + 1} rendered in {elapsed:.3f}s")
 
         # Kick off pre-rendering of adjacent pages after the current one is shown
         QTimer.singleShot(0, self._prerender_adjacent)
@@ -643,6 +767,12 @@ class PDFViewerPanel(QWidget):
                 display, self._active_tool,
                 self._line_start, self._preview_pos,
             )
+        elif (self._active_tool in _POINT_TOOLS
+              and self._hover_pos is not None):
+            display = self._base_pixmap.copy()
+            annotation_overlay.draw_marker_preview(
+                display, self._active_tool, self._hover_pos,
+            )
         else:
             display = self._base_pixmap
         self._page_label.setPixmap(display)
@@ -650,6 +780,56 @@ class PDFViewerPanel(QWidget):
         self._page_label.resize(
             int(display.width() / dpr), int(display.height() / dpr)
         )
+
+    # ── Cursor helpers ────────────────────────────────────────────────────────
+
+    def _update_cursor_for_tool(self):
+        """Set the page-label cursor based on the currently active tool."""
+        if self._active_tool == TOOL_ERASER:
+            self._page_label.setCursor(_make_eraser_cursor())
+        elif self._active_tool in (TOOL_NONE, None):
+            self._page_label.setCursor(Qt.CursorShape.ArrowCursor)
+        else:
+            self._page_label.setCursor(Qt.CursorShape.CrossCursor)
+
+    def _update_hover_cursor(self, fx: float, fy: float):
+        """Update cursor shape based on what's under *(fx, fy)* when no tool
+        is active (or eraser is active)."""
+        if self._active_tool == TOOL_ERASER:
+            self._page_label.setCursor(_make_eraser_cursor())
+            return
+        if self._active_tool not in (TOOL_NONE, None):
+            return  # tool cursor already set by _update_cursor_for_tool
+        pm = self._page_label.pixmap()
+        if not pm or pm.isNull():
+            self._page_label.setCursor(Qt.CursorShape.ArrowCursor)
+            return
+        w, h = _pm_logical_size(pm)
+        tol = _DRAG_TOL
+        mx, my = fx * w, fy * h
+
+        # Check for text-resize handle first (horizontal resize cursor)
+        for i in range(len(self._annotations) - 1, -1, -1):
+            ann = self._annotations[i]
+            if ann.page != self._current_page:
+                continue
+            if ann.type == "text":
+                rect = annotation_overlay.get_text_box_rect(ann, w, h)
+                if rect is None:
+                    continue
+                hs = max(4, round(annotation_overlay._RESIZE_HANDLE
+                                  * h / annotation_overlay.BASE_PAGE_HEIGHT))
+                if (rect.right() - hs <= mx <= rect.right() + 4
+                        and rect.bottom() - hs <= my <= rect.bottom() + 4):
+                    self._page_label.setCursor(Qt.CursorShape.SizeHorCursor)
+                    return
+
+        # Check if hovering over any draggable annotation → open hand
+        drag = self._find_drag_target(fx, fy)
+        if drag is not None:
+            self._page_label.setCursor(Qt.CursorShape.OpenHandCursor)
+            return
+        self._page_label.setCursor(Qt.CursorShape.ArrowCursor)
 
     # ── Mouse handlers ────────────────────────────────────────────────────────
 
@@ -667,6 +847,7 @@ class PDFViewerPanel(QWidget):
             drag = self._find_drag_target(fx, fy)
             if drag is not None:
                 self._drag = drag
+                self._page_label.setCursor(Qt.CursorShape.ClosedHandCursor)
                 return
         self._handle_click(fx, fy)
 
@@ -688,6 +869,14 @@ class PDFViewerPanel(QWidget):
                 and self._line_start is not None):
             self._preview_pos = (fx, fy)
             self._update_display()
+            return
+        # Point-tool preview (checkmark / cross / tilde)
+        if self._active_tool in _POINT_TOOLS:
+            self._hover_pos = (fx, fy)
+            self._update_display()
+            return
+        # Update cursor based on what's under the mouse
+        self._update_hover_cursor(fx, fy)
 
     def _on_page_released(self, fx: float, fy: float):
         # End pan
@@ -700,6 +889,7 @@ class PDFViewerPanel(QWidget):
             if self._drag_moved:
                 self._rebuild_base_and_display()
                 self.annotations_changed.emit()
+            self._update_hover_cursor(fx, fy)
 
     # ── Annotation placement ──────────────────────────────────────────────────
 
@@ -1167,6 +1357,7 @@ class PDFViewerPanel(QWidget):
         """Clear in-progress interaction state (used on page changes)."""
         self._line_start = None
         self._preview_pos = None
+        self._hover_pos = None
         self._drag = None
         self._cancel_inline_editor()
 

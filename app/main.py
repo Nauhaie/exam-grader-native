@@ -3,6 +3,7 @@ import csv
 import os
 import subprocess
 import sys
+import time
 from typing import List
 
 import openpyxl
@@ -119,6 +120,7 @@ class MainWindow(QMainWindow):
             self._apply_project(dlg.project_dir())
 
     def _apply_project(self, project_dir: str):
+        t0 = time.perf_counter()
         data_store.dbg(f"Applying project: {project_dir}")
         data_store.set_project_dir(project_dir)
         self._project_config = data_store.load_project_config(project_dir)
@@ -135,7 +137,9 @@ class MainWindow(QMainWindow):
         self._grading_panel.set_grading_settings(self._grading_settings)
         self._pdf_viewer.set_hi_dpr(self._grading_settings.hi_dpr)
         self._pdf_viewer.set_preset_annotations(self._preset_annotations)
-        data_store.dbg(f"Project applied successfully: {len(self._students)} student(s)")
+        elapsed = time.perf_counter() - t0
+        data_store.dbg(f"Project applied successfully: {len(self._students)} student(s) "
+                       f"in {elapsed:.3f}s")
         if self._students:
             self._select_student(self._students[0])
 
@@ -198,6 +202,7 @@ class MainWindow(QMainWindow):
         if (self._current_student
                 and student.student_number == self._current_student.student_number):
             return
+        t0 = time.perf_counter()
         data_store.dbg(f"Selecting student: {student.display_name()}")
         self._current_student = student
         self._grading_panel.set_current_student(student)
@@ -205,6 +210,8 @@ class MainWindow(QMainWindow):
         annotations = data_store.load_annotations(student.student_number)
         data_store.dbg(f"Loading PDF: {pdf_path}")
         self._pdf_viewer.load_pdf(pdf_path, annotations)
+        elapsed = time.perf_counter() - t0
+        data_store.dbg(f"Student grading view loaded in {elapsed:.3f}s")
 
     def _on_student_selected(self, student):
         if student is None:

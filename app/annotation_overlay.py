@@ -56,6 +56,26 @@ def draw_annotations(pixmap: QPixmap, annotations: List[Annotation], page: int,
     return result
 
 
+def draw_marker_preview(
+    pixmap: QPixmap,
+    tool: str,
+    pos: Tuple[float, float],
+) -> None:
+    """Draw a semi-transparent ghost of a point marker (checkmark/cross/tilde)
+    on *pixmap* **in place** at 40 % opacity."""
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setOpacity(0.4)
+    dpr = pixmap.devicePixelRatio()
+    w = pixmap.width() / dpr
+    h = pixmap.height() / dpr
+    ann = Annotation(page=0, type=tool, x=pos[0], y=pos[1])
+    cx = int(pos[0] * w)
+    cy = int(pos[1] * h)
+    _draw_one(painter, ann, cx, cy, w, h)
+    painter.end()
+
+
 def draw_preview(
     pixmap: QPixmap,
     tool: str,
