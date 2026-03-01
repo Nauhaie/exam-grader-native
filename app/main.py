@@ -36,12 +36,15 @@ from setup_dialog import SetupDialog
 class _SplitterCursorTracker(QObject):
     """Keep splitter resize cursor stable on macOS after window state animations."""
 
-    def __init__(self, splitter: QSplitter, parent=None):
+    _CURSOR_POLL_INTERVAL_MS = 1000 // 30  # ~30 FPS cursor polling.
+
+    def __init__(self, splitter: QSplitter, handle_index: int = 1, parent=None):
         super().__init__(parent)
         self._splitter = splitter
+        self._handle_index = handle_index
         self._owns_cursor = False
         self._timer = QTimer(self)
-        self._timer.setInterval(16)
+        self._timer.setInterval(self._CURSOR_POLL_INTERVAL_MS)
         self._timer.timeout.connect(self._sync_cursor)
         self._timer.start()
         app = QApplication.instance()
@@ -49,7 +52,7 @@ class _SplitterCursorTracker(QObject):
             app.aboutToQuit.connect(self._release_cursor)
 
     def _pointer_on_handle(self) -> bool:
-        handle = self._splitter.handle(1)
+        handle = self._splitter.handle(self._handle_index)
         if handle is None or not handle.isVisible():
             return False
         return handle.rect().contains(handle.mapFromGlobal(QCursor.pos()))
@@ -59,9 +62,11 @@ class _SplitterCursorTracker(QObject):
             self._release_cursor()
             return
         if self._pointer_on_handle():
+            cursor = QApplication.overrideCursor()
             if self._owns_cursor:
-                QApplication.changeOverrideCursor(Qt.CursorShape.SplitHCursor)
-            elif QApplication.overrideCursor() is None:
+                if cursor is None or cursor.shape() != Qt.CursorShape.SplitHCursor:
+                    self._owns_cursor = False
+            if not self._owns_cursor and cursor is None:
                 QApplication.setOverrideCursor(Qt.CursorShape.SplitHCursor)
                 self._owns_cursor = True
         else:
@@ -69,7 +74,9 @@ class _SplitterCursorTracker(QObject):
 
     def _release_cursor(self) -> None:
         if self._owns_cursor:
-            QApplication.restoreOverrideCursor()
+            cursor = QApplication.overrideCursor()
+            if cursor is not None and cursor.shape() == Qt.CursorShape.SplitHCursor:
+                QApplication.restoreOverrideCursor()
             self._owns_cursor = False
 
 
@@ -139,7 +146,7 @@ class MainWindow(QMainWindow):
         splitter.setSizes([600, 800])
 
         if sys.platform == "darwin":
-            self._splitter_cursor_tracker = _SplitterCursorTracker(splitter, self)
+            self._splitter_cursor_tracker = _SplitterCursorTracker(splitter, parent=self)
 
     def _load_session(self):
         data_store.dbg("Loading previous session…")
