@@ -294,7 +294,7 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                             p1 = to_draw(cx_v, cy_v)
                             p2 = to_draw(ann.x2 * pw, ann.y2 * ph)
                             _log(f"       draw_arrow : {p1} → {p2}")
-                            _draw_arrow(page, p1[0], p1[1], p2[0], p2[1])
+                            _draw_arrow(page, p1[0], p1[1], p2[0], p2[1], s)
                         elif ann.type == "circle" and ann.x2 is not None and ann.y2 is not None:
                             cx_d, cy_d = to_draw(cx_v, cy_v)
                             ex_d, ey_d = to_draw(ann.x2 * pw, ann.y2 * ph)
@@ -518,18 +518,19 @@ def _text_rect(cx_v: float, cy_v: float, bw: float, bh: float,
     return fitz.Rect(mw - cy_v - bh, cx_v, mw - cy_v, cx_v + bw)
 
 
-def _draw_arrow(page, x1: float, y1: float, x2: float, y2: float):
+def _draw_arrow(page, x1: float, y1: float, x2: float, y2: float, s: float = 1.0):
     """Draw a line with a filled arrowhead at (x2, y2) – coords in draw space."""
     if x1 == x2 and y1 == y2:
         return
     angle = math.atan2(y2 - y1, x2 - x1)
-    size, half = 12, math.pi / 6
+    size = max(4, round(12 * s))
+    half = math.pi / 6
     # Stop the shaft at the base of the arrowhead triangle so the line does
     # not show through the semi-transparent arrowhead fill.  Use a butt
     # (lineCap=0) so the line end is flat with no rounded protrusion.
     x_stop = x2 - size * math.cos(angle) * math.cos(half)
     y_stop = y2 - size * math.sin(angle) * math.cos(half)
-    page.draw_line((x1, y1), (x_stop, y_stop), color=_RED, width=2, lineCap=0,
+    page.draw_line((x1, y1), (x_stop, y_stop), color=_RED, width=2 * s, lineCap=0,
                    stroke_opacity=0.8)
     pts = [
         fitz.Point(x2, y2),

@@ -65,16 +65,19 @@ def draw_annotations(pixmap: QPixmap, annotations: List[Annotation], page: int,
     return result
 
 
+_PREVIEW_OPACITY = 0.6   # opacity for all annotation previews (marker + shape)
+
+
 def draw_marker_preview(
     pixmap: QPixmap,
     tool: str,
     pos: Tuple[float, float],
 ) -> None:
     """Draw a semi-transparent ghost of a point marker (checkmark/cross/tilde)
-    on *pixmap* **in place** at 40 % opacity."""
+    on *pixmap* **in place** at _PREVIEW_OPACITY."""
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setOpacity(0.4)
+    painter.setOpacity(_PREVIEW_OPACITY)
     dpr = pixmap.devicePixelRatio()
     w = pixmap.width() / dpr
     h = pixmap.height() / dpr
@@ -91,9 +94,10 @@ def draw_preview(
     start: Tuple[float, float],
     end: Tuple[float, float],
 ) -> None:
-    """Draw a dashed ghost shape on *pixmap* **in place** (modifies the pixmap)."""
+    """Draw a semi-transparent solid ghost shape on *pixmap* **in place** (modifies the pixmap)."""
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setOpacity(_PREVIEW_OPACITY)
     dpr = pixmap.devicePixelRatio()
     w = pixmap.width() / dpr
     h = pixmap.height() / dpr
@@ -102,7 +106,7 @@ def draw_preview(
     x2, y2 = int(end[0] * w), int(end[1] * h)
 
     pen_w = max(1, round(2 * s))
-    pen = QPen(_RED, pen_w, Qt.PenStyle.DashLine)
+    pen = QPen(_RED, pen_w, Qt.PenStyle.SolidLine)
     painter.setPen(pen)
     if tool == "line":
         painter.drawLine(x1, y1, x2, y2)
@@ -113,7 +117,7 @@ def draw_preview(
         if radius > 0:
             painter.drawEllipse(x1 - radius, y1 - radius, radius * 2, radius * 2)
     elif tool == "rectcross":
-        # Preview: dashed diagonals of the rectangle (no rectangle border)
+        # Preview: diagonals of the rectangle (no rectangle border)
         painter.drawLine(x1, y1, x2, y2)
         painter.drawLine(x2, y1, x1, y2)
 
