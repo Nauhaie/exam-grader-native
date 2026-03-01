@@ -6,8 +6,8 @@ import sys
 from typing import List
 
 import openpyxl
-from PySide6.QtCore import QEvent, QObject, QPoint, QRect, Qt, QTimer
-from PySide6.QtGui import QAction, QCursor
+from PySide6.QtCore import QEvent, Qt, QTimer
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -31,112 +31,6 @@ from pdf_viewer import PDFViewerPanel
 from settings_dialog import SettingsDialog
 from setup_dialog import SetupDialog
 
-
-class _SplitterCursorFilter(QObject):
-    """macOS workaround: NSTrackingArea cursor rects become stale after
-    full-screen transitions, causing spurious Leave events that reset the
-    QSplitter-handle cursor back to the arrow pointer even while the mouse
-    is still hovering over the separator.
-
-    Using QApplication.setOverrideCursor() instead of handle.setCursor()
-    bypasses the NSTrackingArea mechanism entirely, so the split cursor
-    survives full-screen transitions in both directions.
-
-    This filter is installed on the handle widget and:
-      • pushes SplitHCursor as an application override on Enter / HoverEnter /
-        HoverMove / MouseMove when the cursor is geometrically inside the handle;
-      • suppresses spurious Leave / HoverLeave events (mouse still inside handle)
-        that macOS fires after a full-screen transition;
-      • pops the override when the mouse genuinely leaves the handle.
-    """
-
-    def __init__(self, handle: QWidget, parent: QObject | None = None) -> None:
-        super().__init__(parent)
-        self._handle = handle
-        self._override_active = False
-        handle.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
-        handle.setMouseTracking(True)
-        handle.installEventFilter(self)
-
-    # ------------------------------------------------------------------
-    # Override-cursor helpers
-    # ------------------------------------------------------------------
-
-    def _set_split_cursor(self) -> None:
-        """Push SplitHCursor as the application override (idempotent)."""
-        if not self._override_active:
-            QApplication.setOverrideCursor(Qt.CursorShape.SplitHCursor)
-            self._override_active = True
-
-    def _clear_split_cursor(self) -> None:
-        """Pop the application override cursor (idempotent)."""
-        if self._override_active:
-            QApplication.restoreOverrideCursor()
-            self._override_active = False
-
-    # ------------------------------------------------------------------
-    # Event filter
-    # ------------------------------------------------------------------
-
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        if watched is not self._handle:
-            return super().eventFilter(watched, event)
-
-        etype = event.type()
-
-        if etype in (
-            QEvent.Type.Enter,
-            QEvent.Type.HoverEnter,
-            QEvent.Type.HoverMove,
-            QEvent.Type.MouseMove,
-        ):
-            if self._cursor_over_handle():
-                self._set_split_cursor()
-            return False
-
-        if etype in (QEvent.Type.Leave, QEvent.Type.HoverLeave):
-            if self._cursor_over_handle():
-                # Spurious Leave – mouse is still inside the handle;
-                # suppress the event and keep the split cursor active.
-                self._set_split_cursor()
-                return True
-            self._clear_split_cursor()
-            return False
-
-        return super().eventFilter(watched, event)
-
-    # ------------------------------------------------------------------
-    # Public API for use after window-state transitions
-    # ------------------------------------------------------------------
-
-    def reset(self) -> None:
-        """Reset override-cursor state and resync after a window transition.
-
-        Clears any stale override first, rebuilds the platform tracking
-        areas, then re-applies the override if the pointer is already
-        over the handle.  Works for both windowed→full-screen and
-        full-screen→windowed transitions.
-        """
-        self._clear_split_cursor()
-        # Toggling mouse-tracking prompts Qt to tear down and recreate the
-        # platform tracking areas, repairing stale NSTrackingArea rects.
-        self._handle.setMouseTracking(False)
-        self._handle.setMouseTracking(True)
-        self._handle.update()
-        # Re-apply the override immediately if the pointer is already there.
-        if self._cursor_over_handle():
-            self._set_split_cursor()
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    def _cursor_over_handle(self) -> bool:
-        """Return True if the system cursor is inside the handle's screen rect."""
-        return QRect(
-            self._handle.mapToGlobal(QPoint(0, 0)),
-            self._handle.size(),
-        ).contains(QCursor.pos())
 
 
 class _EmptyDefault(dict):
@@ -204,24 +98,20 @@ class MainWindow(QMainWindow):
 
         splitter.setSizes([600, 800])
 
-        # macOS: install cursor filter to survive full-screen transitions.
-        if sys.platform == "darwin":
-            self._splitter_cursor_filter = _SplitterCursorFilter(
-                splitter.handle(1), self
-            )
-
     def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)
         if (sys.platform == "darwin"
                 and event.type() == QEvent.Type.WindowStateChange):
             # After a full-screen transition the NSTrackingArea cursor rects
             # become stale; reschedule a resync once the animation settles.
-            QTimer.singleShot(300, self._resync_cursors)
+            QTimer.singleShot(750, self._resync_cursors)
 
     def _resync_cursors(self) -> None:
-        """Reset cursor tracking state after a window-state transition."""
-        if hasattr(self, "_splitter_cursor_filter"):
-            self._splitter_cursor_filter.reset()
+        """Force Qt to recreate NSTrackingArea rects after a window-state transition."""
+        handle = self._splitter.handle(1)
+        old_cursor = handle.cursor()
+        handle.unsetCursor()
+        handle.setCursor(old_cursor)
 
     def _load_session(self):
         data_store.dbg("Loading previous session…")
