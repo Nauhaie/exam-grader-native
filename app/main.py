@@ -66,6 +66,11 @@ class MainWindow(QMainWindow):
             # internal cursor tracking for all child widgets (including
             # the QSplitter handle).  Schedule a cursor re-sync after the
             # platform animation completes.
+            data_store.dbg(
+                f"[CURSOR] WindowStateChange detected"
+                f"  new_state={int(self.windowState())}"
+                f"  — scheduling _resync_cursors in 300ms"
+            )
             QTimer.singleShot(300, self._resync_cursors)
 
     def _resync_cursors(self):
@@ -77,18 +82,24 @@ class MainWindow(QMainWindow):
         animations.  Additionally, re-setting every widget-level cursor
         ensures Qt re-registers cursor rects with Cocoa.
         """
+        data_store.dbg("[CURSOR] _resync_cursors: starting cursor re-sync")
         # Re-install the viewport event filter in case the scroll area
         # recreated its viewport widget during the window-state change.
         self._pdf_viewer.reinstall_viewport_filter()
+        data_store.dbg("[CURSOR] _resync_cursors: viewport filter reinstalled")
         # Re-set every widget-level cursor so Qt re-registers them.
+        cursor_count = 0
         for widget in self.findChildren(QWidget):
             if widget.testAttribute(Qt.WidgetAttribute.WA_SetCursor):
+                cursor_count += 1
                 widget.setCursor(widget.cursor())
+        data_store.dbg(f"[CURSOR] _resync_cursors: re-set {cursor_count} widget cursor(s)")
         # Override-cursor cycle to flush platform cursor state.
         # The specific shape (ArrowCursor) is irrelevant — the push/pop
         # forces Qt's Cocoa backend to re-query the native cursor.
         QApplication.setOverrideCursor(Qt.CursorShape.ArrowCursor)
         QApplication.restoreOverrideCursor()
+        data_store.dbg("[CURSOR] _resync_cursors: override-cursor cycle done")
 
     def _setup_ui(self):
         file_menu = self.menuBar().addMenu("File")
