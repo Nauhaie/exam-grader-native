@@ -307,9 +307,9 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                             p3 = to_draw(ann.x2 * pw, cy_v)
                             p4 = to_draw(cx_v, ann.y2 * ph)
                             _log(f"       draw_rectcross : {p1}→{p2}, {p3}→{p4}")
-                            page.draw_line(p1, p2, color=_RED, width=3 * s, lineCap=1,
+                            page.draw_line(p1, p2, color=_RED, width=2 * s, lineCap=1,
                                            stroke_opacity=0.8)
-                            page.draw_line(p3, p4, color=_RED, width=3 * s, lineCap=1,
+                            page.draw_line(p3, p4, color=_RED, width=2 * s, lineCap=1,
                                            stroke_opacity=0.8)
 
                     _log("")
@@ -520,11 +520,17 @@ def _text_rect(cx_v: float, cy_v: float, bw: float, bh: float,
 
 def _draw_arrow(page, x1: float, y1: float, x2: float, y2: float):
     """Draw a line with a filled arrowhead at (x2, y2) – coords in draw space."""
-    page.draw_line((x1, y1), (x2, y2), color=_RED, width=2, lineCap=1, stroke_opacity=0.8)
     if x1 == x2 and y1 == y2:
         return
     angle = math.atan2(y2 - y1, x2 - x1)
     size, half = 12, math.pi / 6
+    # Stop the shaft at the base of the arrowhead triangle so the line does
+    # not show through the semi-transparent arrowhead fill.  Use a butt
+    # (lineCap=0) so the line end is flat with no rounded protrusion.
+    x_stop = x2 - size * math.cos(angle) * math.cos(half)
+    y_stop = y2 - size * math.sin(angle) * math.cos(half)
+    page.draw_line((x1, y1), (x_stop, y_stop), color=_RED, width=2, lineCap=0,
+                   stroke_opacity=0.8)
     pts = [
         fitz.Point(x2, y2),
         fitz.Point(x2 - size * math.cos(angle - half),

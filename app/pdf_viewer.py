@@ -85,11 +85,11 @@ def _make_eraser_cursor() -> QCursor:
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     # outer circle
-    p.setPen(QPen(QColor(140, 140, 140), 2))
+    p.setPen(QPen(QColor(80, 80, 80), 2))
     p.drawEllipse(2, 2, size - 4, size - 4)
     # inner x
     m = 6
-    p.setPen(QPen(QColor(140, 140, 140), 2))
+    p.setPen(QPen(QColor(80, 80, 80), 2))
     p.drawLine(m, m, size - m, size - m)
     p.drawLine(size - m, m, m, size - m)
     p.end()

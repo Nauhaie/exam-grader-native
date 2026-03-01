@@ -1,4 +1,5 @@
 """Right panel: grade-entry spreadsheet."""
+import time
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
@@ -233,9 +234,18 @@ class GradingPanel(QWidget):
         return list(seen)
 
     def _on_extra_toggled(self, checked: bool):
+        t0 = time.perf_counter()
         self._show_extra = checked
+        data_store.dbg(f"extra_fields toggled → {checked}  "
+                       f"({len(self._students)} students, "
+                       f"{len(self._subquestions)} subquestions)")
         self._update_search_modes()
+        t1 = time.perf_counter()
+        data_store.dbg(f"  _update_search_modes: {(t1 - t0) * 1000:.1f} ms")
         self._rebuild_table()
+        t2 = time.perf_counter()
+        data_store.dbg(f"  _rebuild_table: {(t2 - t1) * 1000:.1f} ms")
+        data_store.dbg(f"  extra_fields toggle total: {(t2 - t0) * 1000:.1f} ms")
 
     def _update_search_modes(self):
         """Rebuild the search-mode combo so extra-field names appear when visible."""
@@ -348,6 +358,7 @@ class GradingPanel(QWidget):
         return QColor(255, g, b)
 
     def _rebuild_table(self):
+        t0 = time.perf_counter()
         self._rebuilding = True
         self._table.blockSignals(True)
         try:
@@ -355,11 +366,17 @@ class GradingPanel(QWidget):
         finally:
             self._table.blockSignals(False)
             self._rebuilding = False
+        t1 = time.perf_counter()
         self._apply_highlight()
+        t2 = time.perf_counter()
+        data_store.dbg(f"  _rebuild_table breakdown — "
+                       f"build_contents: {(t1 - t0) * 1000:.1f} ms, "
+                       f"apply_highlight: {(t2 - t1) * 1000:.1f} ms")
         # Defer frozen overlay update so column widths are computed first
         QTimer.singleShot(0, self._update_frozen_geometry)
 
     def _build_table_contents(self):
+        t0 = time.perf_counter()
         filtered = self._filtered_students()
         sq_count = len(self._subquestions)
         extra_names = self._extra_field_names() if self._show_extra else []
@@ -371,6 +388,8 @@ class GradingPanel(QWidget):
         # _HEADER_ROWS frozen header rows + data rows + avg row + exercise-avg row
         self._table.setRowCount(_HEADER_ROWS + len(filtered) + 2)
         self._table.setColumnCount(col_count)
+        data_store.dbg(f"  _build_table_contents: {len(filtered)} rows × {col_count} cols "
+                       f"({sq_count} subquestions, {extra_count} extra fields)")
 
         # ── Build the 3-row column header ─────────────────────────────────────
         self._table.clearSpans()
@@ -412,6 +431,9 @@ class GradingPanel(QWidget):
             self._table.setItem(1, col, _hdr(sq.name, _BG_SQ))
             # Row 2: max points
             self._table.setItem(2, col, _hdr(f"/{sq.max_points:g}", _BG_MAX))
+
+        t1 = time.perf_counter()
+        data_store.dbg(f"    header built: {(t1 - t0) * 1000:.1f} ms")
 
         # ── Data rows ─────────────────────────────────────────────────────────
         for row_idx, student in enumerate(filtered):
@@ -460,7 +482,11 @@ class GradingPanel(QWidget):
                 it.setForeground(QColor(80, 80, 80))
                 self._table.setItem(r, extra_start + ei, it)
 
+        t2 = time.perf_counter()
+        data_store.dbg(f"    data rows built: {(t2 - t1) * 1000:.1f} ms")
         self._fill_average_row(filtered)
+        t3 = time.perf_counter()
+        data_store.dbg(f"    average rows built: {(t3 - t2) * 1000:.1f} ms")
 
     def _fill_average_row(self, filtered: List[Student]):
         sq_count = len(self._subquestions)

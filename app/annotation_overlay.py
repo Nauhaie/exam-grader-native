@@ -305,7 +305,7 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
         x2 = int(ann.x2 * w)
         y2 = int(ann.y2 * h)
         # Draw the two diagonals of the rectangle (no rectangle border)
-        painter.setPen(QPen(_RED, thick, Qt.PenStyle.SolidLine,
+        painter.setPen(QPen(_RED, stroke, Qt.PenStyle.SolidLine,
                             Qt.PenCapStyle.RoundCap))
         painter.drawLine(cx, cy, x2, y2)
         painter.drawLine(x2, cy, cx, y2)
@@ -324,12 +324,23 @@ def _draw_handle(painter: QPainter, hx: int, hy: int, s: float):
 def _draw_arrow(painter: QPainter, x1: int, y1: int, x2: int, y2: int,
                 scale: float = 1.0):
     """Draw a line with a filled arrowhead at *(x2, y2)*."""
-    painter.drawLine(x1, y1, x2, y2)
     if x1 == x2 and y1 == y2:
         return
     angle = math.atan2(y2 - y1, x2 - x1)
     size = max(4, round(MARKER_RADIUS * scale))
     half = math.pi / 6
+    # Stop the shaft at the base of the arrowhead triangle so the line does
+    # not show through the semi-transparent arrowhead fill.
+    x_stop = int(x2 - size * math.cos(angle) * math.cos(half))
+    y_stop = int(y2 - size * math.sin(angle) * math.cos(half))
+    # Use a flat cap on the arrowhead end to avoid any rounded protrusion
+    # into the arrowhead; save and restore the caller's pen afterwards.
+    old_pen = painter.pen()
+    flat_pen = QPen(old_pen)
+    flat_pen.setCapStyle(Qt.PenCapStyle.FlatCap)
+    painter.setPen(flat_pen)
+    painter.drawLine(x1, y1, x_stop, y_stop)
+    painter.setPen(old_pen)
     pts = QPolygon([
         QPoint(x2, y2),
         QPoint(int(x2 - size * math.cos(angle - half)),
