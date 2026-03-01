@@ -126,6 +126,8 @@ class GradingPanel(QWidget):
 
         # Delegate draws a border around the current student's row instead of
         # changing background colours (which would override grade colouring).
+        # Each view gets its own instance so Qt's commitData signal is not
+        # forwarded to a view that did not create the editor.
         self._highlight_delegate = _HighlightDelegate(self._table)
         self._table.setItemDelegate(self._highlight_delegate)
 
@@ -160,9 +162,10 @@ class GradingPanel(QWidget):
         # Click on frozen left selects the student
         self._fz_left.clicked.connect(
             lambda idx: self._on_cell_clicked(idx.row(), idx.column()))
-        # The frozen left panel also gets the highlight delegate so the border
-        # shows on the Name/Number columns too.
-        self._fz_left.setItemDelegate(self._highlight_delegate)
+        # The frozen left panel gets its own highlight delegate (separate
+        # instance avoids Qt's "commitData" warning when _table's editor closes).
+        self._fz_left_highlight_delegate = _HighlightDelegate(self._fz_left)
+        self._fz_left.setItemDelegate(self._fz_left_highlight_delegate)
 
         # Sync scrolling: main table → frozen overlays
         self._table.horizontalScrollBar().valueChanged.connect(
@@ -599,6 +602,7 @@ class GradingPanel(QWidget):
     def _apply_highlight(self):
         if not self._current_student:
             self._highlight_delegate.set_highlight_row(-1)
+            self._fz_left_highlight_delegate.set_highlight_row(-1)
             self._table.viewport().update()
             self._fz_left.viewport().update()
             return
@@ -607,6 +611,7 @@ class GradingPanel(QWidget):
             if student.student_number == self._current_student.student_number:
                 r = _HEADER_ROWS + row_idx
                 self._highlight_delegate.set_highlight_row(r)
+                self._fz_left_highlight_delegate.set_highlight_row(r)
                 self._table.clearSelection()
                 self._table.viewport().update()
                 self._fz_left.viewport().update()
@@ -616,6 +621,7 @@ class GradingPanel(QWidget):
                 )
                 return
         self._highlight_delegate.set_highlight_row(-1)
+        self._fz_left_highlight_delegate.set_highlight_row(-1)
         self._table.viewport().update()
         self._fz_left.viewport().update()
 

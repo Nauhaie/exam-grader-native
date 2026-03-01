@@ -2,7 +2,7 @@
 # package-app.sh – Build a standalone ExamGrader application bundle.
 #
 # Usage:
-#   bash package-app.sh
+#   bash package-app.sh   (do NOT use "source package-app.sh")
 #
 # Requires:  pip install pyinstaller
 # Output:    dist/ExamGrader/   (folder with executable)
@@ -31,11 +31,11 @@ echo "==> Cleaning previous build artifacts…"
 rm -rf build dist ExamGrader.spec
 
 echo "==> Building…"
-ICON_ARG=""
-if [ -f "icon.png" ]; then
-    ICON_ARG="--icon icon.png"
-elif [ -f "icon.icns" ]; then
-    ICON_ARG="--icon icon.icns"
+ICON_ARGS=()
+if [ -f "icon.icns" ]; then
+    ICON_ARGS=(--icon icon.icns)
+elif [ -f "icon.png" ]; then
+    ICON_ARGS=(--icon icon.png)
 fi
 pyinstaller \
     --name "ExamGrader" \
@@ -43,7 +43,7 @@ pyinstaller \
     --onedir \
     --add-data "sample_project:sample_project" \
     --add-data "icon.svg:." \
-    $ICON_ARG \
+    "${ICON_ARGS[@]}" \
     app/main.py
 
 echo ""
