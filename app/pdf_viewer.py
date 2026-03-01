@@ -67,6 +67,31 @@ _INLINE_EDITOR_MIN_W  = 120
 _INLINE_EDITOR_WIDTH  = 200
 
 
+def _cursor_name(shape) -> str:
+    """Return a human-readable name for a cursor shape or QCursor."""
+    if isinstance(shape, QCursor):
+        shape = shape.shape()
+    return _CURSOR_SHAPE_NAMES.get(shape, str(shape))
+
+
+_CURSOR_SHAPE_NAMES = {
+    Qt.CursorShape.ArrowCursor:      "Arrow",
+    Qt.CursorShape.OpenHandCursor:   "OpenHand",
+    Qt.CursorShape.ClosedHandCursor: "ClosedHand",
+    Qt.CursorShape.SizeHorCursor:    "SizeHor",
+    Qt.CursorShape.SizeVerCursor:    "SizeVer",
+    Qt.CursorShape.SizeAllCursor:    "SizeAll",
+    Qt.CursorShape.CrossCursor:      "Cross",
+    Qt.CursorShape.BitmapCursor:     "Bitmap(eraser)",
+}
+
+_HOVER_EVENT_NAMES = {
+    QEvent.Type.HoverEnter: "HoverEnter",
+    QEvent.Type.HoverMove:  "HoverMove",
+    QEvent.Type.HoverLeave: "HoverLeave",
+}
+
+
 def _pm_logical_size(pm: Optional[QPixmap]) -> Tuple[int, int]:
     """Return *(width, height)* of *pm* in device-independent (logical) pixels."""
     if pm and not pm.isNull():
@@ -294,6 +319,11 @@ class ClickableLabel(QLabel):
         if event.type() in (QEvent.Type.HoverEnter,
                             QEvent.Type.HoverMove,
                             QEvent.Type.HoverLeave):
+            global_pos = QCursor.pos()
+            data_store.dbg(
+                f"[CURSOR] ClickableLabel {_HOVER_EVENT_NAMES.get(event.type(), event.type())} SUPPRESSED"
+                f"  global=({global_pos.x()},{global_pos.y()})"
+            )
             return True
         return super().event(event)
 
@@ -473,6 +503,7 @@ class PDFViewerPanel(QWidget):
         that may cause the viewport widget to be recreated, which would
         silently drop our filter.
         """
+        data_store.dbg("[CURSOR] reinstall_viewport_filter called")
         self._scroll.viewport().installEventFilter(self)
 
     def load_pdf(self, pdf_path: Optional[str], annotations: List[Annotation]):
@@ -680,17 +711,33 @@ class PDFViewerPanel(QWidget):
 
     # ── Mouse handlers ────────────────────────────────────────────────────────
 
-    def _set_page_cursor(self, shape):
+    def _set_page_cursor(self, shape, reason=""):
         """Set the cursor on the page label.
 
         Hover events are suppressed on both ClickableLabel (via its event()
         override) and the scroll viewport (via PDFViewerPanel.eventFilter)
         so Qt's internal event processing can no longer reset this cursor.
         """
+        global_pos = QCursor.pos()
+        local_pos = self._page_label.mapFromGlobal(global_pos)
+        data_store.dbg(
+            f"[CURSOR] SET → {_cursor_name(shape)}"
+            f"  local=({local_pos.x()},{local_pos.y()})"
+            f"  global=({global_pos.x()},{global_pos.y()})"
+            f"  reason={reason or 'unspecified'}"
+        )
         self._page_label.setCursor(shape)
 
-    def _unset_page_cursor(self):
+    def _unset_page_cursor(self, reason=""):
         """Restore the default cursor on the page label."""
+        global_pos = QCursor.pos()
+        local_pos = self._page_label.mapFromGlobal(global_pos)
+        data_store.dbg(
+            f"[CURSOR] UNSET (restore default)"
+            f"  local=({local_pos.x()},{local_pos.y()})"
+            f"  global=({global_pos.x()},{global_pos.y()})"
+            f"  reason={reason or 'unspecified'}"
+        )
         self._page_label.unsetCursor()
 
     def _update_hover_cursor(self, fx: float, fy: float):
@@ -699,27 +746,32 @@ class PDFViewerPanel(QWidget):
             drag = self._find_drag_target(fx, fy)
             if drag is not None:
                 if drag.kind == "text-resize":
-                    self._set_page_cursor(Qt.CursorShape.SizeHorCursor)
+                    self._set_page_cursor(Qt.CursorShape.SizeHorCursor,
+                                          f"hover drag={drag.kind} fx={fx:.3f} fy={fy:.3f}")
                 elif drag.kind == "circle-edge":
-                    self._set_page_cursor(Qt.CursorShape.SizeVerCursor)
+                    self._set_page_cursor(Qt.CursorShape.SizeVerCursor,
+                                          f"hover drag={drag.kind} fx={fx:.3f} fy={fy:.3f}")
                 elif drag.kind in ("rectcross-tl", "rectcross-tr",
                                     "rectcross-bl", "rectcross-br"):
-                    self._set_page_cursor(Qt.CursorShape.SizeAllCursor)
+                    self._set_page_cursor(Qt.CursorShape.SizeAllCursor,
+                                          f"hover drag={drag.kind} fx={fx:.3f} fy={fy:.3f}")
                 else:
-                    self._set_page_cursor(Qt.CursorShape.OpenHandCursor)
+                    self._set_page_cursor(Qt.CursorShape.OpenHandCursor,
+                                          f"hover drag={drag.kind} fx={fx:.3f} fy={fy:.3f}")
             else:
-                self._unset_page_cursor()
+                self._unset_page_cursor(f"hover no-drag tool=None fx={fx:.3f} fy={fy:.3f}")
         elif self._active_tool == TOOL_ERASER:
             w, h = self._page_size()
             idx = annotation_overlay.find_annotation_at(
                 self._annotations, self._current_page, fx, fy, w, h
             )
             if idx >= 0:
-                self._set_page_cursor(self._eraser_cursor())
+                self._set_page_cursor(self._eraser_cursor(),
+                                      f"hover eraser over ann[{idx}] fx={fx:.3f} fy={fy:.3f}")
             else:
-                self._unset_page_cursor()
+                self._unset_page_cursor(f"hover eraser no-ann fx={fx:.3f} fy={fy:.3f}")
         else:
-            self._unset_page_cursor()
+            self._unset_page_cursor(f"hover tool={self._active_tool} fx={fx:.3f} fy={fy:.3f}")
 
     def _refresh_cursor(self):
         """Re-evaluate cursor shape at the current mouse position.
@@ -729,12 +781,21 @@ class PDFViewerPanel(QWidget):
         """
         local = self._page_label.mapFromGlobal(QCursor.pos())
         if not self._page_label.rect().contains(local):
+            data_store.dbg(
+                f"[CURSOR] _refresh_cursor: pointer outside page label"
+                f"  local=({local.x()},{local.y()})"
+                f"  label_size=({self._page_label.width()}x{self._page_label.height()})"
+            )
             return
         w, h = self._page_label.width(), self._page_label.height()
         if w <= 0 or h <= 0:
             return
         fx = max(0.0, min(1.0, local.x() / w))
         fy = max(0.0, min(1.0, local.y() / h))
+        data_store.dbg(
+            f"[CURSOR] _refresh_cursor: re-evaluating"
+            f"  tool={self._active_tool!r} fx={fx:.3f} fy={fy:.3f}"
+        )
         self._update_hover_cursor(fx, fy)
 
     def _eraser_cursor(self) -> QCursor:
@@ -757,7 +818,7 @@ class PDFViewerPanel(QWidget):
 
     def _on_page_left(self):
         """Mouse left the page label area — restore default cursor."""
-        self._unset_page_cursor()
+        self._unset_page_cursor("mouse left page label")
 
     def _on_page_pressed(self, fx: float, fy: float):
         self._drag_moved = False
@@ -768,7 +829,7 @@ class PDFViewerPanel(QWidget):
             self._pan_origin = (cur.x(), cur.y())
             self._pan_hval = self._scroll.horizontalScrollBar().value()
             self._pan_vval = self._scroll.verticalScrollBar().value()
-            self._set_page_cursor(Qt.CursorShape.ClosedHandCursor)
+            self._set_page_cursor(Qt.CursorShape.ClosedHandCursor, "pan start")
             return
         if self._active_tool in (TOOL_NONE, None):
             drag = self._find_drag_target(fx, fy)
@@ -789,21 +850,26 @@ class PDFViewerPanel(QWidget):
             return
         # Hover / drag cursor hints
         if QApplication.queryKeyboardModifiers() & _PAN_MOD:
-            self._set_page_cursor(Qt.CursorShape.OpenHandCursor)
+            self._set_page_cursor(Qt.CursorShape.OpenHandCursor, "pan modifier held")
         elif self._drag is not None:
             # Keep the appropriate cursor shape during an active drag
             d = self._drag
             if d.kind in ("circle-move", "line-move", "point", "rectcross-move"):
-                self._set_page_cursor(Qt.CursorShape.ClosedHandCursor)
+                self._set_page_cursor(Qt.CursorShape.ClosedHandCursor,
+                                      f"active drag={d.kind}")
             elif d.kind == "text-resize":
-                self._set_page_cursor(Qt.CursorShape.SizeHorCursor)
+                self._set_page_cursor(Qt.CursorShape.SizeHorCursor,
+                                      f"active drag={d.kind}")
             elif d.kind == "circle-edge":
-                self._set_page_cursor(Qt.CursorShape.SizeVerCursor)
+                self._set_page_cursor(Qt.CursorShape.SizeVerCursor,
+                                      f"active drag={d.kind}")
             elif d.kind in ("rectcross-tl", "rectcross-tr",
                              "rectcross-bl", "rectcross-br"):
-                self._set_page_cursor(Qt.CursorShape.SizeAllCursor)
+                self._set_page_cursor(Qt.CursorShape.SizeAllCursor,
+                                      f"active drag={d.kind}")
             elif d.kind in ("line-start", "line-end"):
-                self._set_page_cursor(Qt.CursorShape.CrossCursor)
+                self._set_page_cursor(Qt.CursorShape.CrossCursor,
+                                      f"active drag={d.kind}")
         else:
             self._update_hover_cursor(fx, fy)
         if self._drag is not None:
@@ -819,7 +885,7 @@ class PDFViewerPanel(QWidget):
         # End pan
         if self._pan_origin is not None:
             self._pan_origin = None
-            self._unset_page_cursor()
+            self._unset_page_cursor("pan end")
             return
         if self._drag is not None:
             self._apply_drag(fx, fy)
@@ -1315,6 +1381,11 @@ class PDFViewerPanel(QWidget):
             if t in (QEvent.Type.HoverEnter,
                      QEvent.Type.HoverMove,
                      QEvent.Type.HoverLeave):
+                global_pos = QCursor.pos()
+                data_store.dbg(
+                    f"[CURSOR] viewport {_HOVER_EVENT_NAMES.get(t, t)} SUPPRESSED"
+                    f"  global=({global_pos.x()},{global_pos.y()})"
+                )
                 return True
             # Ctrl + scroll wheel → zoom (works on all platforms)
             if t == QEvent.Type.Wheel:
