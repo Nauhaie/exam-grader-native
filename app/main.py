@@ -6,7 +6,7 @@ import sys
 from typing import List
 
 import openpyxl
-from PySide6.QtCore import QEvent, QTimer, Qt
+from PySide6.QtCore import QEvent, QObject, QTimer, Qt
 from PySide6.QtGui import QAction, QCursor
 from PySide6.QtWidgets import (
     QApplication,
@@ -36,6 +36,41 @@ class _EmptyDefault(dict):
     """dict subclass that returns 'EMPTY' for missing keys."""
     def __missing__(self, key):
         return "EMPTY"
+
+
+class _SplitterCursorFilter(QObject):
+    """Event filter that uses override cursors for a QSplitter handle.
+
+    After a macOS full-screen transition the NSTrackingArea cursor rects
+    that Qt registers for widget-level cursors can become permanently
+    stale, so the QSplitterHandle's built-in SplitHCursor stops working.
+    Using QApplication.setOverrideCursor bypasses cursor rects entirely.
+    """
+
+    def __init__(self, handle, parent=None):
+        super().__init__(parent)
+        self._handle = handle
+        self._active = False
+
+    def eventFilter(self, obj, event):
+        t = event.type()
+        if t == QEvent.Type.Enter:
+            if not self._active:
+                QApplication.setOverrideCursor(Qt.CursorShape.SplitHCursor)
+                self._active = True
+        elif t == QEvent.Type.Leave:
+            if self._active:
+                QApplication.restoreOverrideCursor()
+                self._active = False
+        elif t == QEvent.Type.MouseButtonRelease:
+            # After a drag the mouse may have left the handle without a
+            # Leave event; check whether it is still inside and clean up.
+            if self._active:
+                local = self._handle.mapFromGlobal(QCursor.pos())
+                if not self._handle.rect().contains(local):
+                    QApplication.restoreOverrideCursor()
+                    self._active = False
+        return False
 
 
 class MainWindow(QMainWindow):
@@ -137,6 +172,13 @@ class MainWindow(QMainWindow):
         self._grading_panel.grade_changed.connect(self._on_grade_changed)
         self._grading_panel.student_selected.connect(self._on_student_selected)
         splitter.addWidget(self._grading_panel)
+
+        # Override-cursor filter on the splitter handle so the resize
+        # cursor survives macOS full-screen transitions (same root cause
+        # as the annotation-cursor issue: stale NSTrackingArea rects).
+        handle = splitter.handle(1)
+        self._splitter_cursor_filter = _SplitterCursorFilter(handle, self)
+        handle.installEventFilter(self._splitter_cursor_filter)
 
         splitter.setSizes([600, 800])
 

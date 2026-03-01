@@ -398,6 +398,7 @@ class PDFViewerPanel(QWidget):
         self._page_cache: Dict[int, QPixmap] = {}
         self._cache_zoom: float = 0.0  # zoom level the cache was built at
         self._cache_dpr: float = 0.0   # dpr the cache was built at
+        self._override_cursor_active: bool = False  # override-cursor stack guard
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -712,11 +713,12 @@ class PDFViewerPanel(QWidget):
     # ── Mouse handlers ────────────────────────────────────────────────────────
 
     def _set_page_cursor(self, shape, reason=""):
-        """Set the cursor on the page label.
+        """Set the cursor via the application override-cursor stack.
 
-        Hover events are suppressed on both ClickableLabel (via its event()
-        override) and the scroll viewport (via PDFViewerPanel.eventFilter)
-        so Qt's internal event processing can no longer reset this cursor.
+        Using QApplication.setOverrideCursor / changeOverrideCursor instead
+        of widget.setCursor bypasses macOS NSTrackingArea cursor-rect
+        management which can become permanently stale after a full-screen
+        transition, causing widget-level cursors to flicker and revert.
         """
         global_pos = QCursor.pos()
         local_pos = self._page_label.mapFromGlobal(global_pos)
@@ -726,10 +728,15 @@ class PDFViewerPanel(QWidget):
             f"  global=({global_pos.x()},{global_pos.y()})"
             f"  reason={reason or 'unspecified'}"
         )
-        self._page_label.setCursor(shape)
+        cursor = QCursor(shape) if not isinstance(shape, QCursor) else shape
+        if self._override_cursor_active:
+            QApplication.changeOverrideCursor(cursor)
+        else:
+            QApplication.setOverrideCursor(cursor)
+            self._override_cursor_active = True
 
     def _unset_page_cursor(self, reason=""):
-        """Restore the default cursor on the page label."""
+        """Remove our override cursor, restoring the default."""
         global_pos = QCursor.pos()
         local_pos = self._page_label.mapFromGlobal(global_pos)
         data_store.dbg(
@@ -738,7 +745,9 @@ class PDFViewerPanel(QWidget):
             f"  global=({global_pos.x()},{global_pos.y()})"
             f"  reason={reason or 'unspecified'}"
         )
-        self._page_label.unsetCursor()
+        if self._override_cursor_active:
+            QApplication.restoreOverrideCursor()
+            self._override_cursor_active = False
 
     def _update_hover_cursor(self, fx: float, fy: float):
         """Set the cursor shape based on the active tool and hover position."""
