@@ -100,7 +100,7 @@ class GradingPanel(QWidget):
         self._search_mode = QComboBox()
         self._search_mode.addItems(["Name + ID", "Name", "ID", "Annotations"])
         self._search_mode.setToolTip("Choose which field to search in")
-        self._search_mode.currentIndexChanged.connect(self._rebuild_table)
+        self._search_mode.currentIndexChanged.connect(self._on_search_mode_changed)
         top.addWidget(self._search_mode)
 
         clear_btn = QPushButton("✕")
@@ -247,6 +247,11 @@ class GradingPanel(QWidget):
         data_store.dbg(f"  _rebuild_table: {(t2 - t1) * 1000:.1f} ms")
         data_store.dbg(f"  extra_fields toggle total: {(t2 - t0) * 1000:.1f} ms")
 
+    def _on_search_mode_changed(self):
+        """Rebuild only when the user has an active filter; otherwise a no-op."""
+        if self._search.text().strip():
+            self._rebuild_table()
+
     def _update_search_modes(self):
         """Rebuild the search-mode combo so extra-field names appear when visible."""
         current = self._search_mode.currentText()
@@ -361,9 +366,15 @@ class GradingPanel(QWidget):
         t0 = time.perf_counter()
         self._rebuilding = True
         self._table.blockSignals(True)
+        self._table.setUpdatesEnabled(False)
+        hdr = self._table.horizontalHeader()
+        hdr.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
         try:
             self._build_table_contents()
         finally:
+            hdr.setSectionResizeMode(
+                QHeaderView.ResizeMode.ResizeToContents)
+            self._table.setUpdatesEnabled(True)
             self._table.blockSignals(False)
             self._rebuilding = False
         t1 = time.perf_counter()
