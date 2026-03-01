@@ -6,8 +6,8 @@ import sys
 from typing import List
 
 import openpyxl
-from PySide6.QtCore import QEvent, QObject, QTimer, Qt
-from PySide6.QtGui import QAction, QCursor
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -38,45 +38,6 @@ class _EmptyDefault(dict):
         return "EMPTY"
 
 
-class _SplitterCursorFilter(QObject):
-    """Event filter that uses override cursors for a QSplitter handle.
-
-    After a macOS full-screen transition the NSTrackingArea cursor rects
-    that Qt registers for widget-level cursors can become permanently
-    stale, so the QSplitterHandle's built-in SplitHCursor stops working.
-    Using QApplication.setOverrideCursor bypasses cursor rects entirely.
-    """
-
-    def __init__(self, handle, parent=None):
-        super().__init__(parent)
-        self._handle = handle
-        self._active = False
-
-    def reset(self):
-        """Reset the active-state flag to match a cleared override-cursor stack."""
-        self._active = False
-
-    def eventFilter(self, obj, event):
-        t = event.type()
-        if t == QEvent.Type.Enter:
-            if not self._active:
-                QApplication.setOverrideCursor(Qt.CursorShape.SplitHCursor)
-                self._active = True
-        elif t == QEvent.Type.Leave:
-            if self._active:
-                QApplication.restoreOverrideCursor()
-                self._active = False
-        elif t == QEvent.Type.MouseButtonRelease:
-            # After a drag the mouse may have left the handle without a
-            # Leave event; check whether it is still inside and clean up.
-            if self._active:
-                local = self._handle.mapFromGlobal(QCursor.pos())
-                if not self._handle.rect().contains(local):
-                    QApplication.restoreOverrideCursor()
-                    self._active = False
-        return False
-
-
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -95,61 +56,6 @@ class MainWindow(QMainWindow):
 
         self._setup_ui()
         self._load_session()
-
-    # ── Full-screen cursor workaround ─────────────────────────────────────────
-
-    def changeEvent(self, event):
-        super().changeEvent(event)
-        if event.type() == QEvent.Type.WindowStateChange:
-            # macOS full-screen transitions can permanently break Qt's
-            # internal cursor tracking for all child widgets (including
-            # the QSplitter handle).  Schedule a cursor re-sync after the
-            # platform animation completes.
-            data_store.dbg(
-                f"[CURSOR] WindowStateChange detected"
-                f"  new_state={self.windowState()}"
-                f"  — scheduling _resync_cursors in 300ms"
-            )
-            QTimer.singleShot(300, self._resync_cursors)
-
-    def _resync_cursors(self):
-        """Force Qt to re-sync native cursor state after a window-state change.
-
-        After a macOS full-screen transition the override-cursor stack may
-        be silently cleared by the system while our tracking flags still
-        say an override cursor is active.  Drain the stack completely,
-        reset all tracking flags, and re-evaluate the cursor so the next
-        mouse interaction starts from a clean state.
-        """
-        data_store.dbg("[CURSOR] _resync_cursors: starting cursor re-sync")
-        # Re-install the viewport event filter in case the scroll area
-        # recreated its viewport widget during the window-state change.
-        self._pdf_viewer.reinstall_viewport_filter()
-        data_store.dbg("[CURSOR] _resync_cursors: viewport filter reinstalled")
-        # Re-set every widget-level cursor so Qt re-registers them.
-        cursor_count = 0
-        for widget in self.findChildren(QWidget):
-            if widget.testAttribute(Qt.WidgetAttribute.WA_SetCursor):
-                cursor_count += 1
-                widget.setCursor(widget.cursor())
-        data_store.dbg(f"[CURSOR] _resync_cursors: re-set {cursor_count} widget cursor(s)")
-        # Drain the override-cursor stack completely.  After a macOS
-        # full-screen transition the stack may be out of sync with our
-        # tracking flags (_override_cursor_active / _active), so the
-        # safest recovery is to empty it and reset all flags.
-        drained = 0
-        while QApplication.overrideCursor() is not None:
-            QApplication.restoreOverrideCursor()
-            drained += 1
-        data_store.dbg(f"[CURSOR] _resync_cursors: drained {drained} override cursor(s)")
-        # Reset tracking flags to match the now-empty stack.
-        self._pdf_viewer.reset_override_cursor()
-        self._splitter_cursor_filter.reset()
-        data_store.dbg("[CURSOR] _resync_cursors: tracking flags reset")
-        # Re-evaluate the cursor at the current mouse position so the
-        # correct shape is pushed fresh via setOverrideCursor.
-        self._pdf_viewer.refresh_cursor()
-        data_store.dbg("[CURSOR] _resync_cursors: cursor re-sync done")
 
     def _setup_ui(self):
         file_menu = self.menuBar().addMenu("File")
@@ -187,13 +93,6 @@ class MainWindow(QMainWindow):
         self._grading_panel.grade_changed.connect(self._on_grade_changed)
         self._grading_panel.student_selected.connect(self._on_student_selected)
         splitter.addWidget(self._grading_panel)
-
-        # Override-cursor filter on the splitter handle so the resize
-        # cursor survives macOS full-screen transitions (same root cause
-        # as the annotation-cursor issue: stale NSTrackingArea rects).
-        handle = splitter.handle(1)
-        self._splitter_cursor_filter = _SplitterCursorFilter(handle, self)
-        handle.installEventFilter(self._splitter_cursor_filter)
 
         splitter.setSizes([600, 800])
 
