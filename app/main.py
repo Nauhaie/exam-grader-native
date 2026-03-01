@@ -234,6 +234,7 @@ class MainWindow(QMainWindow):
             sys.platform == "darwin"
             and event.type() == QEvent.Type.WindowStateChange
         ):
+            # Stagger across the ~0.5-1 s macOS animation window.
             for delay_ms in (300, 600, 1000):
                 QTimer.singleShot(delay_ms, self._refresh_tracking_areas)
 
