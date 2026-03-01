@@ -684,6 +684,10 @@ class GradingPanel(QWidget):
             self._rebuilding = False
             return
 
+        # "m" / "M" → max points for this subquestion
+        if text.lower() == "m":
+            text = str(sq.max_points)
+
         try:
             val = float(text)
             if val < 0:

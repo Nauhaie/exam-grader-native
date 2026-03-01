@@ -90,6 +90,8 @@ shown in the grading panel.
 2. Use the annotation tools in the PDF toolbar (left panel) to mark the exam.
 3. Enter scores directly in the grading table cells (single click or just type).
    French-style decimal commas are accepted (`1,5` is automatically converted to `1.5`).
+   Type **`m`** (or **`M`**) in any score cell to automatically fill in the maximum
+   points for that subquestion.
 4. Press **P** to jump focus back to the current student's grading row:
    - If no cell has been edited yet for this student → jumps to the **first** grading cell.
    - If the last-edited cell is **empty** → jumps back to that cell so you can fill it in.
