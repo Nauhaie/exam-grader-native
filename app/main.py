@@ -52,6 +52,10 @@ class _SplitterCursorFilter(QObject):
         self._handle = handle
         self._active = False
 
+    def reset(self):
+        """Reset the active-state flag to match a cleared override-cursor stack."""
+        self._active = False
+
     def eventFilter(self, obj, event):
         t = event.type()
         if t == QEvent.Type.Enter:
@@ -103,7 +107,7 @@ class MainWindow(QMainWindow):
             # platform animation completes.
             data_store.dbg(
                 f"[CURSOR] WindowStateChange detected"
-                f"  new_state={int(self.windowState())}"
+                f"  new_state={self.windowState()}"
                 f"  — scheduling _resync_cursors in 300ms"
             )
             QTimer.singleShot(300, self._resync_cursors)
@@ -111,11 +115,11 @@ class MainWindow(QMainWindow):
     def _resync_cursors(self):
         """Force Qt to re-sync native cursor state after a window-state change.
 
-        A setOverrideCursor / restoreOverrideCursor cycle makes Qt's
-        platform integration layer re-evaluate which native cursor should
-        be displayed, fixing the stale state left by macOS full-screen
-        animations.  Additionally, re-setting every widget-level cursor
-        ensures Qt re-registers cursor rects with Cocoa.
+        After a macOS full-screen transition the override-cursor stack may
+        be silently cleared by the system while our tracking flags still
+        say an override cursor is active.  Drain the stack completely,
+        reset all tracking flags, and re-evaluate the cursor so the next
+        mouse interaction starts from a clean state.
         """
         data_store.dbg("[CURSOR] _resync_cursors: starting cursor re-sync")
         # Re-install the viewport event filter in case the scroll area
@@ -129,12 +133,23 @@ class MainWindow(QMainWindow):
                 cursor_count += 1
                 widget.setCursor(widget.cursor())
         data_store.dbg(f"[CURSOR] _resync_cursors: re-set {cursor_count} widget cursor(s)")
-        # Override-cursor cycle to flush platform cursor state.
-        # The specific shape (ArrowCursor) is irrelevant — the push/pop
-        # forces Qt's Cocoa backend to re-query the native cursor.
-        QApplication.setOverrideCursor(Qt.CursorShape.ArrowCursor)
-        QApplication.restoreOverrideCursor()
-        data_store.dbg("[CURSOR] _resync_cursors: override-cursor cycle done")
+        # Drain the override-cursor stack completely.  After a macOS
+        # full-screen transition the stack may be out of sync with our
+        # tracking flags (_override_cursor_active / _active), so the
+        # safest recovery is to empty it and reset all flags.
+        drained = 0
+        while QApplication.overrideCursor() is not None:
+            QApplication.restoreOverrideCursor()
+            drained += 1
+        data_store.dbg(f"[CURSOR] _resync_cursors: drained {drained} override cursor(s)")
+        # Reset tracking flags to match the now-empty stack.
+        self._pdf_viewer.reset_override_cursor()
+        self._splitter_cursor_filter.reset()
+        data_store.dbg("[CURSOR] _resync_cursors: tracking flags reset")
+        # Re-evaluate the cursor at the current mouse position so the
+        # correct shape is pushed fresh via setOverrideCursor.
+        self._pdf_viewer.refresh_cursor()
+        data_store.dbg("[CURSOR] _resync_cursors: cursor re-sync done")
 
     def _setup_ui(self):
         file_menu = self.menuBar().addMenu("File")
