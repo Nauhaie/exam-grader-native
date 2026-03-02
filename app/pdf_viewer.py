@@ -40,7 +40,7 @@ TOOL_CROSS     = "cross"
 TOOL_TEXT      = "text"
 TOOL_LINE      = "line"
 TOOL_ARROW     = "arrow"
-TOOL_CIRCLE    = "circle"
+TOOL_ELLIPSE    = "circle"
 TOOL_TILDE     = "tilde"
 TOOL_ERASER    = "eraser"
 TOOL_STAMP     = "stamp"
@@ -52,7 +52,7 @@ _KEY_TOOL_MAP = {
     Qt.Key.Key_T: TOOL_TEXT,
     Qt.Key.Key_L: TOOL_LINE,
     Qt.Key.Key_A: TOOL_ARROW,
-    Qt.Key.Key_O: TOOL_CIRCLE,
+    Qt.Key.Key_O: TOOL_ELLIPSE,
     Qt.Key.Key_N: TOOL_TILDE,
     Qt.Key.Key_E: TOOL_ERASER,
     Qt.Key.Key_S: TOOL_STAMP,
@@ -108,7 +108,8 @@ def _pm_logical_size(pm: Optional[QPixmap]) -> Tuple[int, int]:
 @dataclass
 class _DragState:
     kind: str        # 'point'|'line-start'|'line-end'|'line-move'|
-                     # 'circle-edge'|'circle-move'|'text-resize'
+                     # 'circle-top'|'circle-right'|'circle-bottom'|'circle-left'|
+                     # 'circle-move'|'text-resize'
     index: int       # index in _annotations
     start_fx: float
     start_fy: float
@@ -231,10 +232,6 @@ class _ToolShortcutFilter(QObject):
     def eventFilter(self, obj, event):
         if event.type() != QEvent.Type.KeyPress:
             return False
-        # Don't steal keys while any text-input widget has focus
-        fw = QApplication.focusWidget()
-        if isinstance(fw, (QLineEdit, QPlainTextEdit)):
-            return False
 
         key  = event.key()
         # Mask out non-standard modifiers (e.g. KeypadModifier,
@@ -246,6 +243,20 @@ class _ToolShortcutFilter(QObject):
         mods  = event.modifiers() & _RELEVANT
         alt   = Qt.KeyboardModifier.AltModifier
         shift = Qt.KeyboardModifier.ShiftModifier
+
+        # ── Shift+Alt+Left / Shift+Alt+Right → previous / next student ────────
+        # Always active, even from text-input widgets (no conflict with typing).
+        if mods == (shift | alt) and key == Qt.Key.Key_Left:
+            self._viewer.student_prev_requested.emit()
+            return True
+        if mods == (shift | alt) and key == Qt.Key.Key_Right:
+            self._viewer.student_next_requested.emit()
+            return True
+
+        # Don't steal keys while any text-input widget has focus
+        fw = QApplication.focusWidget()
+        if isinstance(fw, (QLineEdit, QPlainTextEdit)):
+            return False
 
         # ── Tool toggles ──────────────────────────────────────────────────────
         if not mods and key in _KEY_TOOL_MAP:
@@ -267,15 +278,6 @@ class _ToolShortcutFilter(QObject):
                 self._viewer._update_display()
             else:
                 self._viewer.deselect_tool()
-            return True
-
-        # ── Shift+Alt+Left / Shift+Alt+Right → previous / next student ────────
-        # (checked before Alt-only so Shift+Alt is not consumed by the Alt check)
-        if mods == (shift | alt) and key == Qt.Key.Key_Left:
-            self._viewer.student_prev_requested.emit()
-            return True
-        if mods == (shift | alt) and key == Qt.Key.Key_Right:
-            self._viewer.student_next_requested.emit()
             return True
 
         # ── Alt+Left / Alt+Right → previous / next page ───────────────────────
@@ -475,7 +477,7 @@ class PDFViewerPanel(QWidget):
             (TOOL_TEXT,      "T", "Text (T)"),
             (TOOL_LINE,      "╱", "Line (L)"),
             (TOOL_ARROW,     "→", "Arrow (A)"),
-            (TOOL_CIRCLE,    "○", "Circle (O)"),
+            (TOOL_ELLIPSE,    "⬭", "Ellipse (O)"),
             (TOOL_TILDE,     "~", "Approx/tilde (N)"),
             (TOOL_RECTCROSS, "⊠", "Rect cross (R)"),
             (TOOL_STAMP,     "S", "Stamp preset text (S)"),
@@ -793,7 +795,7 @@ class PDFViewerPanel(QWidget):
         """Compose base + optional preview, push to screen."""
         if self._base_pixmap is None:
             return
-        if (self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE, TOOL_RECTCROSS)
+        if (self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_ELLIPSE, TOOL_RECTCROSS)
                 and self._line_start is not None
                 and self._preview_pos is not None):
             display = self._base_pixmap.copy()
@@ -917,7 +919,7 @@ class PDFViewerPanel(QWidget):
             self._drag_moved = True
             self._apply_drag(fx, fy)
             return
-        if (self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE, TOOL_RECTCROSS)
+        if (self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_ELLIPSE, TOOL_RECTCROSS)
                 and self._line_start is not None):
             self._preview_pos = (fx, fy)
             self._update_display()
@@ -974,7 +976,7 @@ class PDFViewerPanel(QWidget):
             else:
                 self._start_text_edit(fx, fy)
 
-        elif self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE, TOOL_RECTCROSS):
+        elif self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_ELLIPSE, TOOL_RECTCROSS):
             if self._line_start is None:
                 self._line_start = (fx, fy)
                 self._preview_pos = (fx, fy)
@@ -982,14 +984,7 @@ class PDFViewerPanel(QWidget):
                 x1, y1 = self._line_start
                 self._line_start = None
                 self._preview_pos = None
-                if self._active_tool == TOOL_CIRCLE:
-                    # Normalise the edge point so the resize handle is always
-                    # at the visual bottom of the circle.
-                    pw, ph = self._page_size()
-                    radius_px = math.hypot((fx - x1) * pw, (fy - y1) * ph)
-                    x2, y2 = x1, y1 + radius_px / ph
-                else:
-                    x2, y2 = fx, fy
+                x2, y2 = fx, fy
                 self._annotations.append(Annotation(
                     page=self._current_page,
                     type=self._active_tool,
@@ -1052,13 +1047,30 @@ class PDFViewerPanel(QWidget):
         elif d.kind == "line-move":
             ann.x,  ann.y  = cl(d.orig_x  + dx), cl(d.orig_y  + dy)
             ann.x2, ann.y2 = cl(d.orig_x2 + dx), cl(d.orig_y2 + dy)
-        elif d.kind == "circle-edge":
-            # Keep the resize handle always at the visual bottom.
-            # New radius = euclidean distance from center to current mouse position.
-            pw, ph = self._page_size()
-            radius_px = math.hypot((fx - d.orig_x) * pw, (fy - d.orig_y) * ph)
-            ann.x2 = d.orig_x
-            ann.y2 = cl(d.orig_y + radius_px / ph)
+        elif d.kind == "circle-top":
+            # Move the top edge of the bounding rectangle
+            if d.orig_y <= d.orig_y2:
+                ann.y = cl(d.orig_y + dy)
+            else:
+                ann.y2 = cl(d.orig_y2 + dy)
+        elif d.kind == "circle-bottom":
+            # Move the bottom edge of the bounding rectangle
+            if d.orig_y >= d.orig_y2:
+                ann.y = cl(d.orig_y + dy)
+            else:
+                ann.y2 = cl(d.orig_y2 + dy)
+        elif d.kind == "circle-right":
+            # Move the right edge of the bounding rectangle
+            if d.orig_x >= d.orig_x2:
+                ann.x = cl(d.orig_x + dx)
+            else:
+                ann.x2 = cl(d.orig_x2 + dx)
+        elif d.kind == "circle-left":
+            # Move the left edge of the bounding rectangle
+            if d.orig_x <= d.orig_x2:
+                ann.x = cl(d.orig_x + dx)
+            else:
+                ann.x2 = cl(d.orig_x2 + dx)
         elif d.kind == "circle-move":
             ann.x,  ann.y  = cl(d.orig_x  + dx), cl(d.orig_y  + dy)
             ann.x2, ann.y2 = cl(d.orig_x2 + dx), cl(d.orig_y2 + dy)
@@ -1107,15 +1119,32 @@ class PDFViewerPanel(QWidget):
                     return _DragState("line-move", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
 
             elif ann.type == "circle" and ann.x2 is not None:
-                cx, cy = ann.x * w, ann.y * h
-                radius = math.hypot((ann.x2 - ann.x) * w, (ann.y2 - ann.y) * h)
-                # Resize handle is always drawn at the visual bottom of the circle
-                bx, by = cx, cy + radius
-                if math.hypot(mx - bx, my - by) <= tol:
-                    return _DragState("circle-edge", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
-                # Move: grab near the circumference (but not the handle area)
-                if abs(math.hypot(mx - cx, my - cy) - radius) <= tol:
-                    return _DragState("circle-move", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+                # Ellipse inscribed in bounding rect (x,y)-(x2,y2)
+                x1c, y1c = ann.x * w, ann.y * h
+                x2c, y2c = ann.x2 * w, ann.y2 * h
+                left, right = min(x1c, x2c), max(x1c, x2c)
+                top_e, bottom_e = min(y1c, y2c), max(y1c, y2c)
+                mid_x = (left + right) / 2
+                mid_y = (top_e + bottom_e) / 2
+                # Top handle
+                if math.hypot(mx - mid_x, my - top_e) <= tol:
+                    return _DragState("circle-top", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+                # Right handle
+                if math.hypot(mx - right, my - mid_y) <= tol:
+                    return _DragState("circle-right", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+                # Bottom handle
+                if math.hypot(mx - mid_x, my - bottom_e) <= tol:
+                    return _DragState("circle-bottom", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+                # Left handle
+                if math.hypot(mx - left, my - mid_y) <= tol:
+                    return _DragState("circle-left", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+                # Move: grab near the ellipse perimeter
+                rx = (right - left) / 2
+                ry = (bottom_e - top_e) / 2
+                if rx > 0 and ry > 0:
+                    ndist = math.hypot((mx - mid_x) / rx, (my - mid_y) / ry)
+                    if abs(ndist - 1.0) <= tol / min(rx, ry):
+                        return _DragState("circle-move", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
 
             elif ann.type == "rectcross" and ann.x2 is not None:
                 # 4 corners of the rectangle
