@@ -40,7 +40,7 @@ TOOL_CROSS     = "cross"
 TOOL_TEXT      = "text"
 TOOL_LINE      = "line"
 TOOL_ARROW     = "arrow"
-TOOL_CIRCLE    = "circle"
+TOOL_ELLIPSE    = "circle"
 TOOL_TILDE     = "tilde"
 TOOL_ERASER    = "eraser"
 TOOL_STAMP     = "stamp"
@@ -52,7 +52,7 @@ _KEY_TOOL_MAP = {
     Qt.Key.Key_T: TOOL_TEXT,
     Qt.Key.Key_L: TOOL_LINE,
     Qt.Key.Key_A: TOOL_ARROW,
-    Qt.Key.Key_O: TOOL_CIRCLE,
+    Qt.Key.Key_O: TOOL_ELLIPSE,
     Qt.Key.Key_N: TOOL_TILDE,
     Qt.Key.Key_E: TOOL_ERASER,
     Qt.Key.Key_S: TOOL_STAMP,
@@ -477,7 +477,7 @@ class PDFViewerPanel(QWidget):
             (TOOL_TEXT,      "T", "Text (T)"),
             (TOOL_LINE,      "╱", "Line (L)"),
             (TOOL_ARROW,     "→", "Arrow (A)"),
-            (TOOL_CIRCLE,    "⬭", "Ellipse (O)"),
+            (TOOL_ELLIPSE,    "⬭", "Ellipse (O)"),
             (TOOL_TILDE,     "~", "Approx/tilde (N)"),
             (TOOL_RECTCROSS, "⊠", "Rect cross (R)"),
             (TOOL_STAMP,     "S", "Stamp preset text (S)"),
@@ -795,7 +795,7 @@ class PDFViewerPanel(QWidget):
         """Compose base + optional preview, push to screen."""
         if self._base_pixmap is None:
             return
-        if (self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE, TOOL_RECTCROSS)
+        if (self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_ELLIPSE, TOOL_RECTCROSS)
                 and self._line_start is not None
                 and self._preview_pos is not None):
             display = self._base_pixmap.copy()
@@ -919,7 +919,7 @@ class PDFViewerPanel(QWidget):
             self._drag_moved = True
             self._apply_drag(fx, fy)
             return
-        if (self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE, TOOL_RECTCROSS)
+        if (self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_ELLIPSE, TOOL_RECTCROSS)
                 and self._line_start is not None):
             self._preview_pos = (fx, fy)
             self._update_display()
@@ -976,7 +976,7 @@ class PDFViewerPanel(QWidget):
             else:
                 self._start_text_edit(fx, fy)
 
-        elif self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_CIRCLE, TOOL_RECTCROSS):
+        elif self._active_tool in (TOOL_LINE, TOOL_ARROW, TOOL_ELLIPSE, TOOL_RECTCROSS):
             if self._line_start is None:
                 self._line_start = (fx, fy)
                 self._preview_pos = (fx, fy)
