@@ -9,3 +9,4 @@ build/
 .eggs/
 data/
 venv/
+ExamGrader.spec
