@@ -276,7 +276,7 @@ class SettingsDialog(QDialog):
         show_extra_hint.setContentsMargins(20, 2, 0, 0)
         layout.addWidget(show_extra_hint)
 
-        layout.addStretch()
+        layout.addSpacing(12)
 
         self._debug_cb = QCheckBox("Enable debug mode")
         self._debug_cb.setChecked(settings.debug_mode)
