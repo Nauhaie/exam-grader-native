@@ -45,37 +45,6 @@ my_project/
 
 A ready-to-use example can be found in the `sample_project/` folder.
 
-### config.json
-
-The configuration file `data/config.json` is **created automatically** with
-sensible defaults the first time a project is opened.  If an app update
-introduces new options that are not yet present in an existing `config.json`,
-the missing keys are filled in with their default values.
-
-The default grading scheme has two exercises (1a, 1b, 1c and 2a, 2b).
-All settings — grading parameters, export template, exercises, preset
-annotations — can be changed from within the app via **Project → Settings…**.
-
-Below is the simplified JSON format used for exercises:
-
-```json
-{
-  "exercises": [
-    {
-      "name": "Exercise 1",
-      "subquestions": [
-        ["1a", 3],
-        ["1b", 4]
-      ]
-    }
-  ]
-}
-```
-
-The `export_filename_template` may reference any field from the students CSV
-using `{field_name}` placeholders.  Available fields: `{student_number}`,
-`{last_name}`, `{first_name}`, plus any extra CSV columns.
-
 ### students.csv format
 
 ```
@@ -193,8 +162,10 @@ All exports go to fixed paths inside the project directory — no file dialogs n
 **Project → Export Annotated PDFs**
 
 Output files are written to `<project>/export/annotated/`.
-The filename for each student is determined by the `export_filename_template`
-field in `config.json`.
+The filename for each student is determined by the template in Settings->Export tab. It
+may reference any field from the students CSV
+using `{field_name}` placeholders.  Available fields: `{student_number}`,
+`{last_name}`, `{first_name}`, plus any extra CSV columns.
 
 ### Grades
 
