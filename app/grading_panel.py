@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from models import GradingScheme, GradingSettings, Student, Subquestion, compute_grade
+from models import BONUS_MALUS_KEY, GradingScheme, GradingSettings, Student, Subquestion, compute_grade
 
 import data_store
 
@@ -389,9 +389,12 @@ class GradingPanel(QWidget):
         sq_count = len(self._subquestions)
         extra_names = self._extra_field_names() if self._show_extra else []
         extra_count = len(extra_names)
-        # Layout: Name | Number | subquestions… | Total | Grade/20 | [extra…]
+        # Layout: Name | Number | subquestions… | Bonus/malus | Total | Grade/20 | [extra…]
         sq_start = 2
-        extra_start = sq_start + sq_count + 2
+        bonus_col = sq_start + sq_count
+        total_col = bonus_col + 1
+        grade_col = bonus_col + 2
+        extra_start = bonus_col + 3
         col_count = extra_start + extra_count
         # _HEADER_ROWS frozen header rows + data rows + avg row + exercise-avg row
         self._table.setRowCount(_HEADER_ROWS + len(filtered) + 2)
@@ -411,9 +414,9 @@ class GradingPanel(QWidget):
                 f = it.font(); f.setBold(True); it.setFont(f)
             return it
 
-        # Fixed columns (Student, Number, Total, Grade/20, extras) span all 3 header rows
-        fixed_cols = [0, 1, sq_start + sq_count, sq_start + sq_count + 1] + list(range(extra_start, extra_start + extra_count))
-        fixed_labels = ["Student", "Number", "Total", self._grade_label()] + extra_names
+        # Fixed columns (Student, Number, Bonus/malus, Total, Grade/20, extras) span all 3 header rows
+        fixed_cols = [0, 1, bonus_col, total_col, grade_col] + list(range(extra_start, extra_start + extra_count))
+        fixed_labels = ["Student", "Number", "Bonus/malus", "Total", self._grade_label()] + extra_names
         for c, label in zip(fixed_cols, fixed_labels):
             self._table.setSpan(0, c, _HEADER_ROWS, 1)
             self._table.setItem(0, c, _hdr(label, _BG_MISC, bold=True))
@@ -465,23 +468,31 @@ class GradingPanel(QWidget):
                 if val is not None:
                     total += val
                     color = self._grade_color(val, sq.max_points)
-                    if val > sq.max_points:
+                    if val < 0 or val > sq.max_points:
                         color = QColor(255, 205, 210)
                     item.setBackground(color)
                 else:
                     item.setBackground(QColor(232, 232, 232))
                 self._table.setItem(r, sq_start + col_idx, item)
 
+            # Bonus/malus column
+            bm_val = sg.get(BONUS_MALUS_KEY)
+            bm_item = QTableWidgetItem("" if bm_val is None else str(bm_val))
+            bm_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if bm_val is not None:
+                total += bm_val
+            self._table.setItem(r, bonus_col, bm_item)
+
             total_item = QTableWidgetItem(f"{total:.1f}")
             total_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             total_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._table.setItem(r, sq_start + sq_count, total_item)
+            self._table.setItem(r, total_col, total_item)
 
             grade = self._compute_grade(total)
             grade_item = QTableWidgetItem(f"{grade:g}")
             grade_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             grade_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._table.setItem(r, sq_start + sq_count + 1, grade_item)
+            self._table.setItem(r, grade_col, grade_item)
 
             for ei, ename in enumerate(extra_names):
                 val = student.extra_fields.get(ename, "")
@@ -500,7 +511,10 @@ class GradingPanel(QWidget):
         sq_count = len(self._subquestions)
         extra_count = len(self._extra_field_names()) if self._show_extra else 0
         sq_start = 2
-        extra_start = sq_start + sq_count + 2
+        bonus_col = sq_start + sq_count
+        total_col = bonus_col + 1
+        grade_col = bonus_col + 2
+        extra_start = bonus_col + 3
         avg_row = _HEADER_ROWS + len(filtered)
         included = [
             s for s in filtered
@@ -532,10 +546,20 @@ class GradingPanel(QWidget):
             avg_total += avg_val
             self._table.setItem(avg_row, sq_start + col_idx,
                                  _avg_item(f"{avg_val:.1f}" if included else ""))
-        self._table.setItem(avg_row, sq_start + sq_count,
+        # Bonus/malus average
+        if included:
+            bm_vals = [self._grades.get(s.student_number, {}).get(BONUS_MALUS_KEY, 0.0) or 0.0
+                       for s in included]
+            bm_avg = sum(bm_vals) / len(included)
+        else:
+            bm_avg = 0.0
+        avg_total += bm_avg
+        self._table.setItem(avg_row, bonus_col,
+                             _avg_item(f"{bm_avg:.1f}" if included else ""))
+        self._table.setItem(avg_row, total_col,
                              _avg_item(f"{avg_total:.1f}" if included else ""))
         avg_grade = self._compute_grade(avg_total) if included else 0.0
-        self._table.setItem(avg_row, sq_start + sq_count + 1,
+        self._table.setItem(avg_row, grade_col,
                              _avg_item(f"{avg_grade:g}" if included else ""))
         for ei in range(extra_count):
             self._table.setItem(avg_row, extra_start + ei, _avg_item(""))
@@ -548,7 +572,10 @@ class GradingPanel(QWidget):
         sq_count = len(self._subquestions)
         extra_count = len(self._extra_field_names()) if self._show_extra else 0
         sq_start = 2
-        extra_start = sq_start + sq_count + 2
+        bonus_col = sq_start + sq_count
+        total_col = bonus_col + 1
+        grade_col = bonus_col + 2
+        extra_start = bonus_col + 3
         ex_row = _HEADER_ROWS + len(filtered) + 1
 
         italic_bold = QFont()
@@ -566,9 +593,10 @@ class GradingPanel(QWidget):
         # Fixed columns
         self._table.setItem(ex_row, 0, _ex_item("Ex. avg", _BG_MISC))
         self._table.setItem(ex_row, 1, _ex_item("", _BG_MISC))
-        # Total and Grade columns
-        self._table.setItem(ex_row, sq_start + sq_count,   _ex_item("", _BG_MISC))
-        self._table.setItem(ex_row, sq_start + sq_count + 1, _ex_item("", _BG_MISC))
+        # Bonus/malus, Total and Grade columns
+        self._table.setItem(ex_row, bonus_col, _ex_item("", _BG_MISC))
+        self._table.setItem(ex_row, total_col, _ex_item("", _BG_MISC))
+        self._table.setItem(ex_row, grade_col, _ex_item("", _BG_MISC))
         for ei in range(extra_count):
             self._table.setItem(ex_row, extra_start + ei, _ex_item("", _BG_MISC))
 
@@ -639,13 +667,17 @@ class GradingPanel(QWidget):
     def _update_row_totals(self, row: int, student: Student):
         sq_count = len(self._subquestions)
         sq_start = 2
+        bonus_col = sq_start + sq_count
+        total_col = bonus_col + 1
+        grade_col = bonus_col + 2
         sg = self._grades.get(student.student_number, {})
         total = sum(sg.get(sq.name, 0) or 0 for sq in self._subquestions)
-        total_item = self._table.item(row, sq_start + sq_count)
+        total += sg.get(BONUS_MALUS_KEY, 0) or 0
+        total_item = self._table.item(row, total_col)
         if total_item:
             total_item.setText(f"{total:.1f}")
         grade = self._compute_grade(total)
-        grade_item = self._table.item(row, sq_start + sq_count + 1)
+        grade_item = self._table.item(row, grade_col)
         if grade_item:
             grade_item.setText(f"{grade:g}")
 
@@ -662,17 +694,21 @@ class GradingPanel(QWidget):
             return
         sq_start = 2
         sq_end = sq_start + len(self._subquestions)
-        if col < sq_start or col >= sq_end:
+        bonus_col = sq_end
+
+        # Only handle subquestion columns and the bonus/malus column
+        is_bonus = (col == bonus_col)
+        if not is_bonus and (col < sq_start or col >= sq_end):
             return
 
-        sq = self._subquestions[col - sq_start]
         student = filtered[data_row]
+        grade_key = BONUS_MALUS_KEY if is_bonus else self._subquestions[col - sq_start].name
         # Accept French decimal comma ("1,5" → "1.5")
         text = item.text().strip().replace(",", ".")
 
         if text == "":
             sg = self._grades.get(student.student_number, {})
-            sg.pop(sq.name, None)
+            sg.pop(grade_key, None)
             data_store.save_grades(self._grades)
             self._rebuilding = True
             self._table.blockSignals(True)
@@ -683,16 +719,14 @@ class GradingPanel(QWidget):
             self._rebuilding = False
             return
 
-        # "m" / "M" → max points for this subquestion
-        if text.lower() == "m":
-            text = str(sq.max_points)
+        # "m" / "M" → max points for this subquestion (not for bonus/malus)
+        if not is_bonus and text.lower() == "m":
+            text = str(self._subquestions[col - sq_start].max_points)
 
         try:
             val = float(text)
-            if val < 0:
-                raise ValueError("negative")
         except ValueError:
-            prev = self._grades.get(student.student_number, {}).get(sq.name)
+            prev = self._grades.get(student.student_number, {}).get(grade_key)
             self._rebuilding = True
             self._table.blockSignals(True)
             item.setText("" if prev is None else str(prev))
@@ -702,19 +736,24 @@ class GradingPanel(QWidget):
 
         if student.student_number not in self._grades:
             self._grades[student.student_number] = {}
-        self._grades[student.student_number][sq.name] = val
-        # Record this cell as the last focused for this student
-        self._last_focus[student.student_number] = sq.name
-        self.grade_changed.emit(student.student_number, sq.name, val)
+        self._grades[student.student_number][grade_key] = val
+        # Record this cell as the last focused for this student (subquestions only)
+        if not is_bonus:
+            self._last_focus[student.student_number] = grade_key
+        self.grade_changed.emit(student.student_number, grade_key, val)
 
         self._rebuilding = True
         self._table.blockSignals(True)
         # Update cell text immediately (e.g. "1,5" → "1.5")
         item.setText(str(val))
-        color = self._grade_color(val, sq.max_points)
-        if val > sq.max_points:
-            color = QColor(255, 205, 210)
-        item.setBackground(color)
+        if is_bonus:
+            item.setBackground(QColor(255, 255, 255))
+        else:
+            sq = self._subquestions[col - sq_start]
+            color = self._grade_color(val, sq.max_points)
+            if val < 0 or val > sq.max_points:
+                color = QColor(255, 205, 210)
+            item.setBackground(color)
         self._update_row_totals(row, student)
         self._fill_average_row(filtered)
         self._table.blockSignals(False)
@@ -746,12 +785,17 @@ class GradingPanel(QWidget):
         student = filtered[data_row]
         sq_start = 2
         sq_end = sq_start + len(self._subquestions)
+        bonus_col = sq_end
         if sq_start <= col < sq_end:
             sq = self._subquestions[col - sq_start]
             self._last_focus[student.student_number] = sq.name
             # Single click → enter edit mode for grading cells.
             # Deferred via singleShot so that any previously-active editor
             # is fully committed and destroyed before the new one opens.
+            item = self._table.item(row, col)
+            if item is not None:
+                QTimer.singleShot(0, lambda captured=item: self._table.editItem(captured))
+        elif col == bonus_col:
             item = self._table.item(row, col)
             if item is not None:
                 QTimer.singleShot(0, lambda captured=item: self._table.editItem(captured))

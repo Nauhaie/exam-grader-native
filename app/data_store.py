@@ -147,19 +147,91 @@ def save_session_config(project_dir: str):
 
 # ── Project config.json (grading scheme + export template) ───────────────────
 
+def _default_config() -> dict:
+    """Return a complete default config dict."""
+    return {
+        "export_filename_template": "{student_number}_annotated",
+        "grading_settings": {
+            "max_note": 20.0,
+            "rounding": 0.5,
+            "score_total": None,
+            "debug_mode": False,
+            "cover_page_detail": False,
+            "hi_dpr": True,
+            "grading_separate_window": False,
+            "show_extra_fields": False,
+        },
+        "preset_annotations": [],
+        "exercises": [
+            {
+                "name": "Exercise 1",
+                "subquestions": [
+                    ["1a", 2.0],
+                    ["1b", 2.0],
+                    ["1c", 2.0],
+                ],
+            },
+            {
+                "name": "Exercise 2",
+                "subquestions": [
+                    ["2a", 2.0],
+                    ["2b", 2.0],
+                ],
+            },
+        ],
+    }
+
+
 def load_project_config(project_dir: str) -> dict:
-    """Read *project_dir*/config.json and return the raw dict."""
-    path = os.path.join(project_dir, "config.json")
-    dbg(f"Loading project config from {path}")
-    with open(path, "r", encoding="utf-8") as f:
-        config = json.load(f)
+    """Read config.json from *project_dir*/data/ and return the raw dict.
+
+    If the file does not exist (or only lives at the legacy location
+    *project_dir*/config.json), it is created / migrated into ``data/``
+    with default values for any missing keys.
+    """
+    data_dir = os.path.join(project_dir, "data")
+    new_path = os.path.join(data_dir, "config.json")
+    old_path = os.path.join(project_dir, "config.json")
+
+    config: dict = {}
+    if os.path.exists(new_path):
+        dbg(f"Loading project config from {new_path}")
+        with open(new_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+    elif os.path.exists(old_path):
+        dbg(f"Migrating project config from legacy {old_path}")
+        with open(old_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+    else:
+        dbg("No project config found, creating defaults")
+
+    # Merge defaults for any missing top-level keys
+    defaults = _default_config()
+    changed = not os.path.exists(new_path)
+    for key, default_val in defaults.items():
+        if key not in config:
+            config[key] = default_val
+            changed = True
+        elif key == "grading_settings" and isinstance(config[key], dict):
+            for skey, sval in defaults["grading_settings"].items():
+                if skey not in config[key]:
+                    config[key][skey] = sval
+                    changed = True
+
+    # Persist to the canonical location inside data/
+    if changed:
+        os.makedirs(data_dir, exist_ok=True)
+        save_project_config(project_dir, config)
+
     dbg(f"  Project config keys: {list(config.keys())}")
     return config
 
 
 def save_project_config(project_dir: str, config_data: dict) -> None:
-    """Write *config_data* back to *project_dir*/config.json."""
-    path = os.path.join(project_dir, "config.json")
+    """Write *config_data* to *project_dir*/data/config.json."""
+    data_dir = os.path.join(project_dir, "data")
+    os.makedirs(data_dir, exist_ok=True)
+    path = os.path.join(data_dir, "config.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(config_data, f, indent=2)
         f.write("\n")
@@ -167,13 +239,19 @@ def save_project_config(project_dir: str, config_data: dict) -> None:
 
 
 def load_grading_scheme_from_config(config_data: dict) -> GradingScheme:
-    """Build a GradingScheme from a parsed config dict."""
+    """Build a GradingScheme from a parsed config dict.
+
+    Supports both the simplified ``["name", max_points]`` list format and
+    the legacy ``{"name": …, "max_points": …}`` dict format.
+    """
     exercises = []
     for ex_data in config_data.get("exercises", []):
-        subquestions = [
-            Subquestion(name=sq["name"], max_points=float(sq["max_points"]))
-            for sq in ex_data.get("subquestions", [])
-        ]
+        subquestions = []
+        for sq in ex_data.get("subquestions", []):
+            if isinstance(sq, list):
+                subquestions.append(Subquestion(name=sq[0], max_points=float(sq[1])))
+            else:
+                subquestions.append(Subquestion(name=sq["name"], max_points=float(sq["max_points"])))
         exercises.append(Exercise(name=ex_data["name"], subquestions=subquestions))
     scheme = GradingScheme(exercises=exercises)
     dbg(f"Grading scheme loaded: {len(exercises)} exercise(s), "
@@ -232,7 +310,7 @@ def save_grading_scheme_to_config(config_data: dict, scheme: GradingScheme) -> N
         {
             "name": ex.name,
             "subquestions": [
-                {"name": sq.name, "max_points": sq.max_points}
+                [sq.name, sq.max_points]
                 for sq in ex.subquestions
             ],
         }
