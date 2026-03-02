@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 import data_store
 import pdf_exporter
 from grading_panel import GradingPanel
-from models import GradingSettings, Student
+from models import GradingSettings, Student, compute_grade
 from pdf_viewer import PDFViewerPanel
 from settings_dialog import SettingsDialog
 from setup_dialog import SetupDialog
@@ -235,11 +235,7 @@ class MainWindow(QMainWindow):
         scheme_total = self._grading_scheme.max_total()
         score_total = gs.score_total if gs.score_total is not None else scheme_total
         pts = sum(sg.get(sq.name, 0) or 0 for sq in subquestions)
-        if score_total <= 0:
-            return pts, 0.0
-        # Round to nearest multiple of gs.rounding (same as GradingPanel)
-        step = max(0.001, gs.rounding)
-        grade = round((pts / score_total) * gs.max_note / step) * step
+        grade = compute_grade(pts, score_total, gs.max_note, gs.rounding)
         return pts, grade
 
     def _extra_field_names(self) -> List[str]:

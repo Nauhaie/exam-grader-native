@@ -17,7 +17,7 @@ from typing import Callable, List, Optional, Tuple
 
 import fitz
 
-from models import Annotation, GradingScheme, GradingSettings, Student
+from models import Annotation, GradingScheme, GradingSettings, Student, compute_grade
 
 
 # ── Colour constants ──────────────────────────────────────────────────────────
@@ -60,15 +60,11 @@ def _insert_cover_page(
     # subquestions.
     student_scores = grades or {}
     all_sqs = [sq for _, sq in scheme.all_subquestions()]
-    points_total = sum(student_scores.get(sq.name, 0) for sq in all_sqs)
+    points_total = sum(student_scores.get(sq.name, 0) or 0 for sq in all_sqs)
 
-    # Compute mark (same formula as GradingPanel._compute_grade)
-    rounding = max(0.001, settings.rounding)
-    if score_total <= 0:
-        mark = 0.0
-    else:
-        raw_mark = (points_total / score_total) * settings.max_note
-        mark = round(raw_mark / rounding) * rounding
+    # Compute mark using the shared grade formula
+    mark = compute_grade(points_total, score_total, settings.max_note,
+                         settings.rounding)
 
     # ── Layout constants ──────────────────────────────────────────────────
     margin = pw * 0.08

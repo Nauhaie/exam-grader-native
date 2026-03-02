@@ -21,13 +21,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from models import GradingScheme, GradingSettings, Student, Subquestion
+from models import GradingScheme, GradingSettings, Student, Subquestion, compute_grade
 
 import data_store
 
 _HEADER_ROWS = 3        # exercise row · subquestion row · max-points row
 _FROZEN_COLS = 2        # Student, Number columns are always visible
-_MIN_ROUNDING_STEP = 0.001   # prevents division-by-zero in grade rounding
 
 # Header background colours
 _BG_EX   = QColor(180, 198, 230)   # exercise name row
@@ -345,11 +344,7 @@ class GradingPanel(QWidget):
         """Convert raw *total* points to a final grade using current settings."""
         gs = self._grading_settings
         score_total = gs.score_total if gs.score_total is not None else self._max_total()
-        if score_total <= 0:
-            return 0.0
-        raw = (total / score_total) * gs.max_note
-        step = max(_MIN_ROUNDING_STEP, gs.rounding)
-        return round(raw / step) * step
+        return compute_grade(total, score_total, gs.max_note, gs.rounding)
 
     def _grade_label(self) -> str:
         """Column header label showing the max note."""
@@ -529,7 +524,7 @@ class GradingPanel(QWidget):
         avg_total = 0.0
         for col_idx, sq in enumerate(self._subquestions):
             if included:
-                vals = [self._grades.get(s.student_number, {}).get(sq.name, 0.0)
+                vals = [self._grades.get(s.student_number, {}).get(sq.name, 0.0) or 0.0
                         for s in included]
                 avg_val = sum(vals) / len(included)
             else:
@@ -596,7 +591,7 @@ class GradingPanel(QWidget):
                 ex_avg = sum(
                     sum(
                         self._grades.get(s.student_number, {}).get(
-                            self._subquestions[ci2].name, 0.0)
+                            self._subquestions[ci2].name, 0.0) or 0.0
                         for ci2 in cols
                     )
                     for s in included
@@ -645,7 +640,7 @@ class GradingPanel(QWidget):
         sq_count = len(self._subquestions)
         sq_start = 2
         sg = self._grades.get(student.student_number, {})
-        total = sum(sg.get(sq.name, 0) for sq in self._subquestions)
+        total = sum(sg.get(sq.name, 0) or 0 for sq in self._subquestions)
         total_item = self._table.item(row, sq_start + sq_count)
         if total_item:
             total_item.setText(f"{total:.1f}")
