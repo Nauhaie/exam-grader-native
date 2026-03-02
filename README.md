@@ -162,8 +162,7 @@ All exports go to fixed paths inside the project directory — no file dialogs n
 **Project → Export Annotated PDFs**
 
 Output files are written to `<project>/export/annotated/`.
-The filename for each student is determined by the template in Settings->Export tab. It
-may reference any field from the students CSV
+The filename for each student is determined by the template in Project → Settings → Export tab. It may reference any field from the students CSV
 using `{field_name}` placeholders.  Available fields: `{student_number}`,
 `{last_name}`, `{first_name}`, plus any extra CSV columns.
 
