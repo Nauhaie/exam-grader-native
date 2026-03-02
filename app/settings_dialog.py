@@ -461,8 +461,10 @@ class SettingsDialog(QDialog):
         full = fmt(self._exam_max_points)
         half = fmt(self._exam_max_points / 2)
         self._preview.setText(
-            f"Example: {self._exam_max_points:g} pts → <b>{full}</b> / {mn:g}  ·  "
-            f"{self._exam_max_points / 2:g} pts → <b>{half}</b> / {mn:g}"
+            f"Example — full score: {self._exam_max_points:g} pts scored"
+            f" → grade <b>{full}</b> / {mn:g}"
+            f"  ·  half score: {self._exam_max_points / 2:g} pts scored"
+            f" → grade <b>{half}</b> / {mn:g}"
         )
 
     # ── Scheme tab helpers ────────────────────────────────────────────────────

@@ -230,6 +230,15 @@ class _ToolShortcutFilter(QObject):
         return global_rect.contains(QCursor.pos())
 
     def eventFilter(self, obj, event):
+        # Immediately refresh the pan cursor whenever the pan modifier is
+        # pressed or released so that the hand cursor appears / disappears
+        # without the user having to move the mouse first.
+        if event.type() in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease):
+            if event.key() in (Qt.Key.Key_Meta, Qt.Key.Key_Control):
+                if self._mouse_over_pdf():
+                    self._viewer._refresh_cursor_at_mouse()
+                return False
+
         if event.type() != QEvent.Type.KeyPress:
             return False
 
@@ -889,6 +898,22 @@ class PDFViewerPanel(QWidget):
                 self._page_label.setCursor(Qt.CursorShape.OpenHandCursor)
             return
         self._page_label.setCursor(Qt.CursorShape.ArrowCursor)
+
+    def _refresh_cursor_at_mouse(self):
+        """Recompute the page-label cursor using the current mouse position.
+
+        Called when a modifier key is pressed or released so the hand cursor
+        appears/disappears immediately without requiring mouse movement.
+        """
+        w, h = self._page_label.width(), self._page_label.height()
+        if w <= 0 or h <= 0:
+            return
+        pos = self._page_label.mapFromGlobal(QCursor.pos())
+        if not self._page_label.rect().contains(pos):
+            return
+        fx = max(0.0, min(1.0, pos.x() / w))
+        fy = max(0.0, min(1.0, pos.y() / h))
+        self._update_hover_cursor(fx, fy)
 
     # ── Mouse handlers ────────────────────────────────────────────────────────
 
