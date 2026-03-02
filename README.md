@@ -11,6 +11,9 @@ enter scores and export fully annotated PDFs.
 - Dependencies listed in `requirements.txt`
 
 ```bash
+python -m venv venv
+source venv/bin/activate        # macOS / Linux
+# venv\Scripts\activate         # Windows
 pip install -r requirements.txt
 ```
 
@@ -19,6 +22,8 @@ pip install -r requirements.txt
 ## Running
 
 ```bash
+source venv/bin/activate        # macOS / Linux
+# venv\Scripts\activate         # Windows
 cd app
 python main.py
 ```
@@ -51,6 +56,8 @@ my_project/
 A ready-to-use example can be found in the `sample_project/` folder.
 
 ### config.json format
+
+Below is the minimal `config.json` required to start a project:
 
 ```json
 {
@@ -87,7 +94,7 @@ shown in the grading panel.
 ## Grading workflow
 
 1. Select a student from the grading table (right panel) or use **Shift+Alt+←/→**.
-2. Use the annotation tools in the PDF toolbar (left panel) to mark the exam.
+2. Use the annotation tools (toolbar above the PDF) to mark the exam.
 3. Enter scores directly in the grading table cells (single click or just type).
    French-style decimal commas are accepted (`1,5` is automatically converted to `1.5`).
    Type **`m`** (or **`M`**) in any score cell to automatically fill in the maximum
@@ -148,19 +155,8 @@ For circles, drag the blue handle at the bottom to resize, or drag the circumfer
 
 ### Annotation tools
 
-| Key | Tool |
-|-----|------|
-| **V** | Checkmark |
-| **X** | Cross |
-| **T** | Text |
-| **L** | Line |
-| **A** | Arrow |
-| **O** | Circle |
-| **N** | Approx/tilde (~) |
-| **R** | Rect cross (⊠) |
-| **S** | Stamp (preset text) |
-| **E** | Eraser |
-| **Esc** | Cancel in-progress shape / deselect tool |
+See the [Annotation tools](#annotation-tools) table above for keyboard shortcuts
+(**V**, **X**, **T**, **L**, **A**, **O**, **N**, **R**, **S**, **E**, **Esc**).
 
 *(Pressing a tool key again while that tool is active deselects it.)*
 
@@ -169,8 +165,9 @@ For circles, drag the blue handle at the bottom to resize, or drag the circumfer
 ## Extra CSV fields
 
 The students CSV may contain any additional columns beyond the three required
-ones.  In the grading panel click **Extra fields** to toggle their display as
-read-only columns.  Extra fields are also searchable from the filter box.
+ones.  Enable **"Show extra fields in grading panel"** in
+**Project → Settings… → Advanced** to display them as read-only columns.
+Extra fields are also searchable from the filter box.
 
 ---
 
@@ -184,7 +181,7 @@ Open via **Project → Settings…**.  The dialog has five tabs:
 | **Export** | Filename template for annotated PDFs, cover page detail level |
 | **Grading Scheme** | Exercise / subquestion editor (names & max points) |
 | **Preset Annotations** | Manage the text presets used by the Stamp tool (S) |
-| **Advanced** | Debug mode, high-DPI rendering, grading sheet in separate window |
+| **Advanced** | Debug mode, high-DPI rendering, grading sheet in separate window, show extra fields |
 
 ### Grading sheet in separate window
 
@@ -220,7 +217,7 @@ Use the included `package-app.sh` script.  It creates a self-contained
 application bundle in `dist/` using PyInstaller.
 
 ```bash
-# Install packaging tool (once)
+# Install packaging tool (once, inside the venv)
 pip install pyinstaller
 
 # Build

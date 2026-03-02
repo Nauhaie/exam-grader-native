@@ -2,6 +2,7 @@
 import csv
 import json
 import os
+import tempfile
 from typing import Dict, List, Optional
 
 from models import Annotation, Exercise, GradingScheme, GradingSettings, Student, Subquestion
@@ -101,6 +102,26 @@ def ensure_data_dirs():
     os.makedirs(EXPORT_DIR, exist_ok=True)
     os.makedirs(ANNOTATED_EXPORT_DIR, exist_ok=True)
     dbg(f"Ensured data dirs exist under {_active_project_dir}")
+
+
+def _atomic_json_write(path: str, data) -> None:
+    """Write *data* as JSON to *path* atomically (write to temp, then rename).
+
+    This prevents data loss if the application crashes mid-write.
+    """
+    dir_name = os.path.dirname(path)
+    fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp_path, path)
+    except Exception:
+        # Clean up the temp file on any failure
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 # ── Session config ────────────────────────────────────────────────────────────
@@ -274,8 +295,7 @@ def load_grades() -> Dict[str, dict]:
 def save_grades(grades: Dict[str, dict]):
     _require_project_dir("save_grades")
     ensure_data_dirs()
-    with open(GRADES_PATH, "w", encoding="utf-8") as f:
-        json.dump(grades, f, indent=2)
+    _atomic_json_write(GRADES_PATH, grades)
     dbg(f"Grades saved for {len(grades)} student(s)")
 
 
@@ -324,6 +344,5 @@ def save_annotations(student_number: str, annotations: List[Annotation]):
             item["width"] = ann.width
         # height is intentionally NOT saved; it is always computed from content
         data.append(item)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+    _atomic_json_write(path, data)
     dbg(f"Annotations saved for student {student_number}: {len(annotations)} annotation(s)")

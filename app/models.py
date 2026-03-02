@@ -66,3 +66,20 @@ class GradingScheme:
     def max_total(self) -> float:
         return sum(sq.max_points for _, sq in self.all_subquestions())
 
+
+_MIN_ROUNDING_STEP = 0.001
+
+
+def compute_grade(total: float, score_total: float, max_note: float,
+                  rounding: float) -> float:
+    """Convert raw *total* points to a final grade.
+
+    This is the single authoritative implementation of the grade formula used
+    by the grading panel, the CSV/XLSX export, and the cover-page generator.
+    """
+    if score_total <= 0:
+        return 0.0
+    raw = (total / score_total) * max_note
+    step = max(_MIN_ROUNDING_STEP, rounding)
+    return round(raw / step) * step
+
