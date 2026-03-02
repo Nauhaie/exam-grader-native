@@ -112,7 +112,7 @@ def draw_preview(
         painter.drawLine(x1, y1, x2, y2)
     elif tool == "arrow":
         _draw_arrow(painter, x1, y1, x2, y2, s)
-    elif tool == "circle":
+    elif tool == "ellipse":
         # Ellipse inscribed in the bounding rectangle defined by start/end
         painter.setBrush(Qt.BrushStyle.NoBrush)
         left, right = min(x1, x2), max(x1, x2)
@@ -163,7 +163,7 @@ def find_annotation_at(
             )
             if dist <= tolerance_px:
                 return i
-        elif ann.type == "circle" and ann.x2 is not None and ann.y2 is not None:
+        elif ann.type == "ellipse" and ann.x2 is not None and ann.y2 is not None:
             # Ellipse inscribed in bounding rect (x,y)-(x2,y2)
             x1p = ann.x * img_width
             y1p = ann.y * img_height
@@ -307,7 +307,7 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
         _draw_handle(painter, cx, cy, s)
         _draw_handle(painter, x2, y2, s)
 
-    elif ann.type == "circle" and ann.x2 is not None and ann.y2 is not None:
+    elif ann.type == "ellipse" and ann.x2 is not None and ann.y2 is not None:
         # Ellipse inscribed in the bounding rectangle (x,y)-(x2,y2)
         painter.setPen(QPen(_RED, stroke))
         painter.setBrush(Qt.BrushStyle.NoBrush)

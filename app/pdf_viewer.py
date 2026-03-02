@@ -40,7 +40,7 @@ TOOL_CROSS     = "cross"
 TOOL_TEXT      = "text"
 TOOL_LINE      = "line"
 TOOL_ARROW     = "arrow"
-TOOL_ELLIPSE    = "circle"
+TOOL_ELLIPSE    = "ellipse"
 TOOL_TILDE     = "tilde"
 TOOL_ERASER    = "eraser"
 TOOL_STAMP     = "stamp"
@@ -448,7 +448,7 @@ class PDFViewerPanel(QWidget):
         self._pan_vval: int = 0
         self._preset_annotations: List[str] = []
         self._stamp_popup: Optional[QWidget] = None
-        self._hi_dpr: bool = True
+        self._hi_dpr: bool = False
         self._hover_pos: Optional[Tuple[float, float]] = None  # mouse pos for point-tool preview
         self._eraser_hover_idx: int = -1  # annotation index under eraser cursor
         # Pre-render cache: { page_index: QPixmap }
@@ -875,7 +875,9 @@ class PDFViewerPanel(QWidget):
         drag = self._find_drag_target(fx, fy)
         if drag is not None:
             # Handle-specific cursors (endpoints, resize handles)
-            if drag.kind in ("line-start", "line-end", "circle-edge",
+            if drag.kind in ("line-start", "line-end",
+                             "circle-top", "circle-right",
+                             "circle-bottom", "circle-left",
                              "rectcross-tl", "rectcross-tr",
                              "rectcross-bl", "rectcross-br"):
                 self._page_label.setCursor(Qt.CursorShape.SizeAllCursor)
@@ -1118,7 +1120,7 @@ class PDFViewerPanel(QWidget):
                 if annotation_overlay._pt_seg_dist(mx, my, x1, y1, x2, y2) <= tol:
                     return _DragState("line-move", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
 
-            elif ann.type == "circle" and ann.x2 is not None:
+            elif ann.type == "ellipse" and ann.x2 is not None:
                 # Ellipse inscribed in bounding rect (x,y)-(x2,y2)
                 x1c, y1c = ann.x * w, ann.y * h
                 x2c, y2c = ann.x2 * w, ann.y2 * h
@@ -1287,8 +1289,6 @@ class PDFViewerPanel(QWidget):
 
     def _show_stamp_popup(self, fx: float, fy: float):
         self._close_stamp_popup()
-        if not self._preset_annotations:
-            return
         pm = self._page_label.pixmap()
         if not pm or pm.isNull():
             return

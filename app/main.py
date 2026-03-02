@@ -32,8 +32,8 @@ from pdf_viewer import PDFViewerPanel
 from settings_dialog import SettingsDialog
 from setup_dialog import SetupDialog
 
-# Use Meta (Cmd on macOS) on macOS, Ctrl elsewhere for window-switch shortcuts
-_WIN_MOD = Qt.KeyboardModifier.MetaModifier if sys.platform == "darwin" else Qt.KeyboardModifier.ControlModifier
+# Qt.KeyboardModifier.ControlModifier maps to Cmd on macOS, Ctrl on Win/Linux
+_WIN_MOD = Qt.KeyboardModifier.ControlModifier
 
 
 class _EmptyDefault(dict):
@@ -81,7 +81,6 @@ class MainWindow(QMainWindow):
 
         # Window menu (shown/populated only in separate-window mode)
         self._window_menu = self.menuBar().addMenu("Window")
-        mod_name = "Cmd" if sys.platform == "darwin" else "Ctrl"
         self._win_action_main = self._window_menu.addAction("PDF Viewer")
         self._win_action_main.setShortcut(QKeySequence(_WIN_MOD | Qt.Key.Key_1))
         self._win_action_main.triggered.connect(self._activate_main_window)
@@ -134,7 +133,7 @@ class MainWindow(QMainWindow):
         if dlg.exec():
             self._apply_project(dlg.project_dir())
         elif quit_on_cancel:
-            QApplication.instance().quit()
+            sys.exit(0)
 
     def _apply_project(self, project_dir: str):
         t0 = time.perf_counter()

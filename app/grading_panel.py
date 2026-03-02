@@ -120,7 +120,7 @@ class GradingPanel(QWidget):
         layout.addLayout(top)
 
         self._table = QTableWidget()
-        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
         self._table.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked |
             QAbstractItemView.EditTrigger.AnyKeyPressed
@@ -359,6 +359,14 @@ class GradingPanel(QWidget):
         b = int(196 + (255 - 196) * pct)
         return QColor(255, g, b)
 
+    @staticmethod
+    def _bonus_malus_color(val) -> QColor:
+        if val is None or val == 0:
+            return QColor(232, 232, 232)
+        if val > 0:
+            return QColor(200, 240, 200)
+        return QColor(255, 205, 210)
+
     def _rebuild_table(self):
         t0 = time.perf_counter()
         self._rebuilding = True
@@ -479,6 +487,7 @@ class GradingPanel(QWidget):
             bm_val = sg.get(BONUS_MALUS_KEY)
             bm_item = QTableWidgetItem("" if bm_val is None else str(bm_val))
             bm_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            bm_item.setBackground(self._bonus_malus_color(bm_val))
             if bm_val is not None:
                 total += bm_val
             self._table.setItem(r, bonus_col, bm_item)
@@ -747,7 +756,7 @@ class GradingPanel(QWidget):
         # Update cell text immediately (e.g. "1,5" → "1.5")
         item.setText(str(val))
         if is_bonus:
-            item.setBackground(QColor(255, 255, 255))
+            item.setBackground(self._bonus_malus_color(val))
         else:
             sq = self._subquestions[col - sq_start]
             color = self._grade_color(val, sq.max_points)
