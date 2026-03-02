@@ -300,11 +300,13 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                             _log(f"       draw_arrow : {p1} → {p2}")
                             _draw_arrow(page, p1[0], p1[1], p2[0], p2[1], s)
                         elif ann.type == "circle" and ann.x2 is not None and ann.y2 is not None:
-                            cx_d, cy_d = to_draw(cx_v, cy_v)
-                            ex_d, ey_d = to_draw(ann.x2 * pw, ann.y2 * ph)
-                            radius = math.hypot(ex_d - cx_d, ey_d - cy_d)
-                            _log(f"       draw_circle : center=({cx_d:.2f},{cy_d:.2f}) radius={radius:.2f}")
-                            page.draw_circle((cx_d, cy_d), radius, color=_RED, width=2 * s, stroke_opacity=0.8)
+                            # Ellipse inscribed in the bounding rectangle
+                            p1 = to_draw(cx_v, cy_v)
+                            p2 = to_draw(ann.x2 * pw, ann.y2 * ph)
+                            rect = fitz.Rect(min(p1[0], p2[0]), min(p1[1], p2[1]),
+                                             max(p1[0], p2[0]), max(p1[1], p2[1]))
+                            _log(f"       draw_ellipse : rect={rect}")
+                            page.draw_oval(rect, color=_RED, width=2 * s, stroke_opacity=0.8)
                         elif ann.type == "rectcross" and ann.x2 is not None and ann.y2 is not None:
                             p1 = to_draw(cx_v, cy_v)
                             p2 = to_draw(ann.x2 * pw, ann.y2 * ph)

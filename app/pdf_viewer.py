@@ -108,7 +108,7 @@ def _pm_logical_size(pm: Optional[QPixmap]) -> Tuple[int, int]:
 @dataclass
 class _DragState:
     kind: str        # 'point'|'line-start'|'line-end'|'line-move'|
-                     # 'circle-edge'|'circle-move'|'text-resize'
+                     # 'circle-top'|'circle-right'|'circle-move'|'text-resize'
     index: int       # index in _annotations
     start_fx: float
     start_fy: float
@@ -476,7 +476,7 @@ class PDFViewerPanel(QWidget):
             (TOOL_TEXT,      "T", "Text (T)"),
             (TOOL_LINE,      "╱", "Line (L)"),
             (TOOL_ARROW,     "→", "Arrow (A)"),
-            (TOOL_CIRCLE,    "○", "Circle (O)"),
+            (TOOL_CIRCLE,    "⬭", "Ellipse (O)"),
             (TOOL_TILDE,     "~", "Approx/tilde (N)"),
             (TOOL_RECTCROSS, "⊠", "Rect cross (R)"),
             (TOOL_STAMP,     "S", "Stamp preset text (S)"),
@@ -983,14 +983,7 @@ class PDFViewerPanel(QWidget):
                 x1, y1 = self._line_start
                 self._line_start = None
                 self._preview_pos = None
-                if self._active_tool == TOOL_CIRCLE:
-                    # Normalise the edge point so the resize handle is always
-                    # at the visual bottom of the circle.
-                    pw, ph = self._page_size()
-                    radius_px = math.hypot((fx - x1) * pw, (fy - y1) * ph)
-                    x2, y2 = x1, y1 + radius_px / ph
-                else:
-                    x2, y2 = fx, fy
+                x2, y2 = fx, fy
                 self._annotations.append(Annotation(
                     page=self._current_page,
                     type=self._active_tool,
@@ -1053,13 +1046,14 @@ class PDFViewerPanel(QWidget):
         elif d.kind == "line-move":
             ann.x,  ann.y  = cl(d.orig_x  + dx), cl(d.orig_y  + dy)
             ann.x2, ann.y2 = cl(d.orig_x2 + dx), cl(d.orig_y2 + dy)
-        elif d.kind == "circle-edge":
-            # Keep the resize handle always at the visual bottom.
-            # New radius = euclidean distance from center to current mouse position.
-            pw, ph = self._page_size()
-            radius_px = math.hypot((fx - d.orig_x) * pw, (fy - d.orig_y) * ph)
-            ann.x2 = d.orig_x
-            ann.y2 = cl(d.orig_y + radius_px / ph)
+        elif d.kind == "circle-top":
+            # Move the top edge of the bounding rectangle
+            ann.y = cl(d.orig_y + dy) if d.orig_y <= d.orig_y2 else ann.y
+            ann.y2 = cl(d.orig_y2 + dy) if d.orig_y2 < d.orig_y else ann.y2
+        elif d.kind == "circle-right":
+            # Move the right edge of the bounding rectangle
+            ann.x = cl(d.orig_x + dx) if d.orig_x >= d.orig_x2 else ann.x
+            ann.x2 = cl(d.orig_x2 + dx) if d.orig_x2 > d.orig_x else ann.x2
         elif d.kind == "circle-move":
             ann.x,  ann.y  = cl(d.orig_x  + dx), cl(d.orig_y  + dy)
             ann.x2, ann.y2 = cl(d.orig_x2 + dx), cl(d.orig_y2 + dy)
@@ -1108,15 +1102,26 @@ class PDFViewerPanel(QWidget):
                     return _DragState("line-move", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
 
             elif ann.type == "circle" and ann.x2 is not None:
-                cx, cy = ann.x * w, ann.y * h
-                radius = math.hypot((ann.x2 - ann.x) * w, (ann.y2 - ann.y) * h)
-                # Resize handle is always drawn at the visual bottom of the circle
-                bx, by = cx, cy + radius
-                if math.hypot(mx - bx, my - by) <= tol:
-                    return _DragState("circle-edge", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
-                # Move: grab near the circumference (but not the handle area)
-                if abs(math.hypot(mx - cx, my - cy) - radius) <= tol:
-                    return _DragState("circle-move", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+                # Ellipse inscribed in bounding rect (x,y)-(x2,y2)
+                x1c, y1c = ann.x * w, ann.y * h
+                x2c, y2c = ann.x2 * w, ann.y2 * h
+                left, right = min(x1c, x2c), max(x1c, x2c)
+                top_e, bottom_e = min(y1c, y2c), max(y1c, y2c)
+                mid_x = (left + right) / 2
+                mid_y = (top_e + bottom_e) / 2
+                # Top handle
+                if math.hypot(mx - mid_x, my - top_e) <= tol:
+                    return _DragState("circle-top", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+                # Right handle
+                if math.hypot(mx - right, my - mid_y) <= tol:
+                    return _DragState("circle-right", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+                # Move: grab near the ellipse perimeter
+                rx = (right - left) / 2
+                ry = (bottom_e - top_e) / 2
+                if rx > 0 and ry > 0:
+                    ndist = math.hypot((mx - mid_x) / rx, (my - mid_y) / ry)
+                    if abs(ndist - 1.0) <= tol / min(rx, ry):
+                        return _DragState("circle-move", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
 
             elif ann.type == "rectcross" and ann.x2 is not None:
                 # 4 corners of the rectangle

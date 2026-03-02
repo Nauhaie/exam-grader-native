@@ -113,9 +113,12 @@ def draw_preview(
     elif tool == "arrow":
         _draw_arrow(painter, x1, y1, x2, y2, s)
     elif tool == "circle":
-        radius = int(math.hypot(x2 - x1, y2 - y1))
-        if radius > 0:
-            painter.drawEllipse(x1 - radius, y1 - radius, radius * 2, radius * 2)
+        # Ellipse inscribed in the bounding rectangle defined by start/end
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        left, right = min(x1, x2), max(x1, x2)
+        top, bottom = min(y1, y2), max(y1, y2)
+        if right - left > 0 and bottom - top > 0:
+            painter.drawEllipse(left, top, right - left, bottom - top)
     elif tool == "rectcross":
         # Preview: diagonals of the rectangle (no rectangle border)
         painter.drawLine(x1, y1, x2, y2)
@@ -161,15 +164,21 @@ def find_annotation_at(
             if dist <= tolerance_px:
                 return i
         elif ann.type == "circle" and ann.x2 is not None and ann.y2 is not None:
-            cx = ann.x * img_width
-            cy = ann.y * img_height
-            radius = math.hypot(
-                (ann.x2 - ann.x) * img_width,
-                (ann.y2 - ann.y) * img_height,
-            )
-            dist = math.hypot(px * img_width - cx, py * img_height - cy)
-            if abs(dist - radius) <= tolerance_px:
-                return i
+            # Ellipse inscribed in bounding rect (x,y)-(x2,y2)
+            x1p = ann.x * img_width
+            y1p = ann.y * img_height
+            x2p = ann.x2 * img_width
+            y2p = ann.y2 * img_height
+            ecx = (x1p + x2p) / 2
+            ecy = (y1p + y2p) / 2
+            rx = abs(x2p - x1p) / 2
+            ry = abs(y2p - y1p) / 2
+            if rx > 0 and ry > 0:
+                # Normalised distance from centre (1.0 = on the ellipse)
+                ndist = math.hypot((px * img_width - ecx) / rx,
+                                   (py * img_height - ecy) / ry)
+                if abs(ndist - 1.0) <= tolerance_px / min(rx, ry):
+                    return i
         elif ann.type == "rectcross" and ann.x2 is not None and ann.y2 is not None:
             # Hit either diagonal of the rectangle
             x1, y1 = ann.x * img_width, ann.y * img_height
@@ -299,11 +308,20 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
         _draw_handle(painter, x2, y2, s)
 
     elif ann.type == "circle" and ann.x2 is not None and ann.y2 is not None:
+        # Ellipse inscribed in the bounding rectangle (x,y)-(x2,y2)
         painter.setPen(QPen(_RED, stroke))
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        radius = int(math.hypot(ann.x2 * w - cx, ann.y2 * h - cy))
-        painter.drawEllipse(cx - radius, cy - radius, radius * 2, radius * 2)
-        _draw_handle(painter, cx, cy + radius, s)
+        ex2 = int(ann.x2 * w)
+        ey2 = int(ann.y2 * h)
+        left, right = min(cx, ex2), max(cx, ex2)
+        top, bottom = min(cy, ey2), max(cy, ey2)
+        if right - left > 0 and bottom - top > 0:
+            painter.drawEllipse(left, top, right - left, bottom - top)
+        # Handles at top-centre and right-centre of the bounding rectangle
+        mid_x = (left + right) // 2
+        mid_y = (top + bottom) // 2
+        _draw_handle(painter, mid_x, top, s)     # top handle
+        _draw_handle(painter, right, mid_y, s)    # right handle
 
     elif ann.type == "rectcross" and ann.x2 is not None and ann.y2 is not None:
         x2 = int(ann.x2 * w)
