@@ -1,6 +1,6 @@
 """Right panel: grade-entry spreadsheet."""
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPen
@@ -37,20 +37,31 @@ _BG_MISC = QColor(215, 215, 215)   # non-grade fixed columns (Student, Number, �
 _HIGHLIGHT_COLOR = QColor(30, 100, 220)   # border colour for the current-student row
 
 
+_EXERCISE_BOUNDARY_COLOR = QColor(120, 120, 120)   # darker vertical divider between exercises
+
+
 class _HighlightDelegate(QStyledItemDelegate):
     """Draws a 2-px coloured border around each cell of the highlighted row.
 
     The selection background is suppressed so the grade-based cell colours are
     always visible regardless of focus state.
+
+    Also draws a slightly darker right-border on the last column of each
+    exercise group so exercise boundaries are visually distinct.
     """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._highlight_row: int = -1
         self._editor_opened_callback = None  # optional callback(row, col)
+        self._exercise_boundary_cols: Set[int] = set()
 
     def set_highlight_row(self, row: int):
         self._highlight_row = row
+
+    def set_exercise_boundaries(self, cols: Set[int]):
+        """Set which column indices get a darker right-border (exercise separators)."""
+        self._exercise_boundary_cols = cols
 
     def set_editor_opened_callback(self, callback):
         """Set a callback invoked with (row, col) whenever an editor is created."""
@@ -77,6 +88,14 @@ class _HighlightDelegate(QStyledItemDelegate):
             # Shrink by 1 px so the 2-px pen stays fully inside the cell
             # boundary and does not affect row height or column width.
             painter.drawRect(option.rect.adjusted(1, 1, -1, -1))
+            painter.restore()
+
+        # Draw a slightly darker right border at exercise-group boundaries.
+        if index.column() in self._exercise_boundary_cols:
+            painter.save()
+            painter.setPen(QPen(_EXERCISE_BOUNDARY_COLOR, 1))
+            r = option.rect
+            painter.drawLine(r.right(), r.top(), r.right(), r.bottom())
             painter.restore()
 
 
@@ -178,6 +197,9 @@ class GradingPanel(QWidget):
         # instance avoids Qt's "commitData" warning when _table's editor closes).
         self._fz_left_highlight_delegate = _HighlightDelegate(self._fz_left)
         self._fz_left.setItemDelegate(self._fz_left_highlight_delegate)
+        # The frozen header panel also uses a delegate for exercise boundary lines.
+        self._fz_header_delegate = _HighlightDelegate(self._fz_header)
+        self._fz_header.setItemDelegate(self._fz_header_delegate)
 
         # Sync scrolling: main table → frozen overlays
         self._table.horizontalScrollBar().valueChanged.connect(
@@ -420,6 +442,8 @@ class GradingPanel(QWidget):
             it.setFlags(Qt.ItemFlag.ItemIsEnabled)
             it.setBackground(bg)
             it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if text:
+                it.setToolTip(text)
             if bold:
                 f = it.font(); f.setBold(True); it.setFont(f)
             return it
@@ -437,6 +461,15 @@ class GradingPanel(QWidget):
         ex_groups: Dict[str, List[int]] = {}   # exercise name → list of sq col offsets
         for ci, ex_name in enumerate(self._exercises_for_sq):
             ex_groups.setdefault(ex_name, []).append(ci)
+
+        # Compute exercise-boundary columns (last col of each exercise except the last).
+        ex_names_ordered = list(dict.fromkeys(self._exercises_for_sq))
+        boundary_cols: Set[int] = set()
+        for ex_name in ex_names_ordered[:-1]:
+            last_ci = ex_groups[ex_name][-1]
+            boundary_cols.add(sq_start + last_ci)
+        self._highlight_delegate.set_exercise_boundaries(boundary_cols)
+        self._fz_header_delegate.set_exercise_boundaries(boundary_cols)
 
         seen_ex: set = set()
         for ci, (ex_name, sq) in enumerate(zip(self._exercises_for_sq, self._subquestions)):
@@ -843,8 +876,13 @@ class GradingPanel(QWidget):
                 fz.hide()
             return
 
-        # Force column width computation
-        self._table.resizeColumnsToContents()
+        hdr = self._table.horizontalHeader()
+        # After a full rebuild the mode is ResizeToContents; measure columns once
+        # and then lock to Interactive so that incremental cell updates (e.g.
+        # changing avg values) cannot shrink columns below their initial size.
+        if cc > 0 and hdr.sectionResizeMode(0) != QHeaderView.ResizeMode.Interactive:
+            self._table.resizeColumnsToContents()
+            hdr.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
 
         # Sync column widths and row heights to overlays
         for c in range(cc):
