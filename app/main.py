@@ -8,7 +8,7 @@ from typing import List
 
 import openpyxl
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -27,10 +27,13 @@ from PySide6.QtWidgets import (
 import data_store
 import pdf_exporter
 from grading_panel import GradingPanel
-from models import GradingSettings, Student, compute_grade
+from models import BONUS_MALUS_KEY, GradingSettings, Student, compute_grade
 from pdf_viewer import PDFViewerPanel
 from settings_dialog import SettingsDialog
 from setup_dialog import SetupDialog
+
+# Use Meta (Cmd on macOS) on macOS, Ctrl elsewhere for window-switch shortcuts
+_WIN_MOD = Qt.KeyboardModifier.MetaModifier if sys.platform == "darwin" else Qt.KeyboardModifier.ControlModifier
 
 
 class _EmptyDefault(dict):
@@ -75,6 +78,17 @@ class MainWindow(QMainWindow):
         project_menu.addAction("Export Grades as CSV").triggered.connect(self._export_csv)
         project_menu.addAction("Export Grades as XLSX").triggered.connect(self._export_xlsx)
         project_menu.addAction("Export Annotated PDFs").triggered.connect(self._export_annotated_pdfs)
+
+        # Window menu (shown/populated only in separate-window mode)
+        self._window_menu = self.menuBar().addMenu("Window")
+        mod_name = "Cmd" if sys.platform == "darwin" else "Ctrl"
+        self._win_action_main = self._window_menu.addAction("PDF Viewer")
+        self._win_action_main.setShortcut(QKeySequence(_WIN_MOD | Qt.Key.Key_1))
+        self._win_action_main.triggered.connect(self._activate_main_window)
+        self._win_action_grading = self._window_menu.addAction("Grading Sheet")
+        self._win_action_grading.setShortcut(QKeySequence(_WIN_MOD | Qt.Key.Key_2))
+        self._win_action_grading.triggered.connect(self._activate_grading_window)
+        self._window_menu.menuAction().setVisible(False)
 
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self.setCentralWidget(self._splitter)
@@ -235,6 +249,7 @@ class MainWindow(QMainWindow):
         scheme_total = self._grading_scheme.max_total()
         score_total = gs.score_total if gs.score_total is not None else scheme_total
         pts = sum(sg.get(sq.name, 0) or 0 for sq in subquestions)
+        pts += sg.get(BONUS_MALUS_KEY, 0) or 0
         grade = compute_grade(pts, score_total, gs.max_note, gs.rounding)
         return pts, grade
 
@@ -259,7 +274,7 @@ class MainWindow(QMainWindow):
         fieldnames = (["student_number", "last_name", "first_name"]
                       + extra_names
                       + [sq.name for sq in subquestions]
-                      + ["total", "grade"])
+                      + ["bonus_malus", "total", "grade"])
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
@@ -274,6 +289,8 @@ class MainWindow(QMainWindow):
                     row[name] = student.extra_fields.get(name, "")
                 for sq in subquestions:
                     row[sq.name] = sg.get(sq.name, "")
+                bm = sg.get(BONUS_MALUS_KEY)
+                row["bonus_malus"] = bm if bm is not None else ""
                 pts, grade = self._compute_student_grade(sg, subquestions)
                 row["total"] = pts
                 row["grade"] = grade
@@ -299,7 +316,7 @@ class MainWindow(QMainWindow):
         ws.append(["student_number", "last_name", "first_name"]
                   + extra_names
                   + [sq.name for sq in subquestions]
-                  + ["total", "grade"])
+                  + ["bonus_malus", "total", "grade"])
         for student in self._students:
             sg = self._grades.get(student.student_number, {})
             pts, grade = self._compute_student_grade(sg, subquestions)
@@ -307,7 +324,7 @@ class MainWindow(QMainWindow):
                 [student.student_number, student.last_name, student.first_name]
                 + [student.extra_fields.get(name, "") for name in extra_names]
                 + [sg.get(sq.name, "") for sq in subquestions]
-                + [pts, grade]
+                + [sg.get(BONUS_MALUS_KEY, ""), pts, grade]
             )
         wb.save(path)
         dlg = QMessageBox(QMessageBox.Icon.Information, "Export",
@@ -500,6 +517,20 @@ class MainWindow(QMainWindow):
             self._splitter.setSizes([600, 800])
             self._grading_window.close()
             self._grading_window = None
+
+        # Show/hide the Window menu depending on separate-window mode
+        self._window_menu.menuAction().setVisible(want_separate)
+
+    def _activate_main_window(self):
+        """Bring the main (PDF viewer) window to front."""
+        self.activateWindow()
+        self.raise_()
+
+    def _activate_grading_window(self):
+        """Bring the grading sheet window to front."""
+        if self._grading_window is not None:
+            self._grading_window.activateWindow()
+            self._grading_window.raise_()
 
     def closeEvent(self, event):
         """Close the separate grading window when the main window closes."""

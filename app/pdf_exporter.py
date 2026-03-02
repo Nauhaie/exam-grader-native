@@ -17,7 +17,7 @@ from typing import Callable, List, Optional, Tuple
 
 import fitz
 
-from models import Annotation, GradingScheme, GradingSettings, Student, compute_grade
+from models import Annotation, BONUS_MALUS_KEY, GradingScheme, GradingSettings, Student, compute_grade
 
 
 # ── Colour constants ──────────────────────────────────────────────────────────
@@ -61,6 +61,8 @@ def _insert_cover_page(
     student_scores = grades or {}
     all_sqs = [sq for _, sq in scheme.all_subquestions()]
     points_total = sum(student_scores.get(sq.name, 0) or 0 for sq in all_sqs)
+    bonus_malus = student_scores.get(BONUS_MALUS_KEY, 0) or 0
+    points_total += bonus_malus
 
     # Compute mark using the shared grade formula
     mark = compute_grade(points_total, score_total, settings.max_note,
@@ -129,6 +131,12 @@ def _insert_cover_page(
         # Avoid running past the bottom of the page
         if y > ph - margin:
             break
+
+    # ── Bonus/malus line (only if nonzero) ────────────────────────────
+    if bonus_malus != 0 and y <= ph - margin:
+        bm_label = f"Bonus/malus:  {bonus_malus:+g}"
+        _left_text(page, bm_label, col_name_x, y, usable_w, fs_body, bold=True)
+        y += line_gap
 
 
 def _centered_text(page, text: str, cx: float, y: float, max_w: float,

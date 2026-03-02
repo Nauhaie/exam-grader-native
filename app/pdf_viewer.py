@@ -231,10 +231,6 @@ class _ToolShortcutFilter(QObject):
     def eventFilter(self, obj, event):
         if event.type() != QEvent.Type.KeyPress:
             return False
-        # Don't steal keys while any text-input widget has focus
-        fw = QApplication.focusWidget()
-        if isinstance(fw, (QLineEdit, QPlainTextEdit)):
-            return False
 
         key  = event.key()
         # Mask out non-standard modifiers (e.g. KeypadModifier,
@@ -246,6 +242,20 @@ class _ToolShortcutFilter(QObject):
         mods  = event.modifiers() & _RELEVANT
         alt   = Qt.KeyboardModifier.AltModifier
         shift = Qt.KeyboardModifier.ShiftModifier
+
+        # ── Shift+Alt+Left / Shift+Alt+Right → previous / next student ────────
+        # Always active, even from text-input widgets (no conflict with typing).
+        if mods == (shift | alt) and key == Qt.Key.Key_Left:
+            self._viewer.student_prev_requested.emit()
+            return True
+        if mods == (shift | alt) and key == Qt.Key.Key_Right:
+            self._viewer.student_next_requested.emit()
+            return True
+
+        # Don't steal keys while any text-input widget has focus
+        fw = QApplication.focusWidget()
+        if isinstance(fw, (QLineEdit, QPlainTextEdit)):
+            return False
 
         # ── Tool toggles ──────────────────────────────────────────────────────
         if not mods and key in _KEY_TOOL_MAP:
@@ -267,15 +277,6 @@ class _ToolShortcutFilter(QObject):
                 self._viewer._update_display()
             else:
                 self._viewer.deselect_tool()
-            return True
-
-        # ── Shift+Alt+Left / Shift+Alt+Right → previous / next student ────────
-        # (checked before Alt-only so Shift+Alt is not consumed by the Alt check)
-        if mods == (shift | alt) and key == Qt.Key.Key_Left:
-            self._viewer.student_prev_requested.emit()
-            return True
-        if mods == (shift | alt) and key == Qt.Key.Key_Right:
-            self._viewer.student_next_requested.emit()
             return True
 
         # ── Alt+Left / Alt+Right → previous / next page ───────────────────────
