@@ -894,14 +894,17 @@ class PDFViewerPanel(QWidget):
 
     def _on_page_pressed(self, fx: float, fy: float):
         self._drag_moved = False
-        # Cmd/Ctrl + left-click → start panning
+        # Cmd/Ctrl + left-click → start panning (only when scrollable)
         if QApplication.queryKeyboardModifiers() & _PAN_MOD:
-            vp = self._scroll.viewport()
-            cur = vp.mapFromGlobal(QCursor.pos())
-            self._pan_origin = (cur.x(), cur.y())
-            self._pan_hval = self._scroll.horizontalScrollBar().value()
-            self._pan_vval = self._scroll.verticalScrollBar().value()
-            self._page_label.setCursor(Qt.CursorShape.ClosedHandCursor)
+            hbar = self._scroll.horizontalScrollBar()
+            vbar = self._scroll.verticalScrollBar()
+            if hbar.maximum() > 0 or vbar.maximum() > 0:
+                vp = self._scroll.viewport()
+                cur = vp.mapFromGlobal(QCursor.pos())
+                self._pan_origin = (cur.x(), cur.y())
+                self._pan_hval = hbar.value()
+                self._pan_vval = vbar.value()
+                self._page_label.setCursor(Qt.CursorShape.ClosedHandCursor)
             return
         if self._active_tool in (TOOL_NONE, None):
             drag = self._find_drag_target(fx, fy)
