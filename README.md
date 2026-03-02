@@ -5,28 +5,16 @@ enter scores and export fully annotated PDFs.
 
 ---
 
-## Requirements
+## Running the bundled app
 
-- Python 3.10+
-- Dependencies listed in `requirements.txt`
+If you received a pre-built bundle, just launch it directly — no Python
+installation required.
 
-```bash
-python -m venv venv
-source venv/bin/activate        # macOS / Linux
-# venv\Scripts\activate         # Windows
-pip install -r requirements.txt
-```
-
----
-
-## Running
-
-```bash
-source venv/bin/activate        # macOS / Linux
-# venv\Scripts\activate         # Windows
-cd app
-python main.py
-```
+| Platform | How to open |
+|----------|-------------|
+| **macOS** | Double-click `ExamGrader.app` (or drag it to Applications first) |
+| **Windows** | Double-click `ExamGrader.exe` inside the `ExamGrader/` folder |
+| **Linux** | Run `./ExamGrader` from the terminal inside the `ExamGrader/` folder |
 
 ---
 
@@ -97,7 +85,9 @@ student_number,last_name,first_name
 ```
 
 Any additional columns (e.g. `participantID`, `group`) are stored and can be
-shown in the grading panel.
+shown as read-only columns in the grading panel and used in the filter box.
+Enable **"Show extra fields in grading panel"** in
+**Project → Settings… → Advanced** to display them.
 
 ---
 
@@ -173,15 +163,6 @@ See the [Annotation tools](#annotation-tools) table above for keyboard shortcuts
 
 ---
 
-## Extra CSV fields
-
-The students CSV may contain any additional columns beyond the three required
-ones.  Enable **"Show extra fields in grading panel"** in
-**Project → Settings… → Advanced** to display them as read-only columns.
-Extra fields are also searchable from the filter box.
-
----
-
 ## Settings
 
 Open via **Project → Settings…**.  The dialog has five tabs:
@@ -192,7 +173,7 @@ Open via **Project → Settings…**.  The dialog has five tabs:
 | **Export** | Filename template for annotated PDFs, cover page detail level |
 | **Grading Scheme** | Exercise / subquestion editor (names & max points) |
 | **Preset Annotations** | Manage the text presets used by the Stamp tool (S) |
-| **Advanced** | Debug mode, high-DPI rendering, grading sheet in separate window, show extra fields |
+| **Advanced** | High-DPI rendering, grading sheet in separate window, show extra fields, debug mode |
 
 ### Grading sheet in separate window
 
@@ -219,6 +200,33 @@ field in `config.json`.
 
 - **Project → Export Grades as CSV** → `<project>/export/grades.csv`
 - **Project → Export Grades as XLSX** → `<project>/export/grades.xlsx`
+
+---
+
+## Running from source
+
+For users who downloaded the source code directly.
+
+### Requirements
+
+- Python 3.10+
+- Dependencies listed in `requirements.txt`
+
+```bash
+python -m venv venv
+source venv/bin/activate        # macOS / Linux
+# venv\Scripts\activate         # Windows
+pip install -r requirements.txt
+```
+
+### Starting the app
+
+```bash
+source venv/bin/activate        # macOS / Linux
+# venv\Scripts\activate         # Windows
+cd app
+python main.py
+```
 
 ---
 

@@ -831,10 +831,14 @@ class PDFViewerPanel(QWidget):
     def _update_hover_cursor(self, fx: float, fy: float):
         """Update cursor shape based on what's under *(fx, fy)* when no tool
         is active (or eraser is active)."""
-        # Cmd/Ctrl held → show open-hand to indicate pan-ready
+        # Cmd/Ctrl held → show open-hand to indicate pan-ready, but only when
+        # the PDF is actually scrollable (i.e. the page is larger than the view).
         if QApplication.queryKeyboardModifiers() & _PAN_MOD:
-            self._page_label.setCursor(Qt.CursorShape.OpenHandCursor)
-            return
+            hbar = self._scroll.horizontalScrollBar()
+            vbar = self._scroll.verticalScrollBar()
+            if hbar.maximum() > 0 or vbar.maximum() > 0:
+                self._page_label.setCursor(Qt.CursorShape.OpenHandCursor)
+                return
         if self._active_tool == TOOL_ERASER:
             self._page_label.setCursor(_make_eraser_cursor())
             w, h = self._page_size()
@@ -1128,6 +1132,15 @@ class PDFViewerPanel(QWidget):
                 top_e, bottom_e = min(y1c, y2c), max(y1c, y2c)
                 mid_x = (left + right) / 2
                 mid_y = (top_e + bottom_e) / 2
+                rx = (right - left) / 2
+                ry = (bottom_e - top_e) / 2
+                # For very small ellipses the handle grab zones overlap the centre,
+                # making it impossible to move the ellipse.  Provide an explicit
+                # centre grab zone that takes priority so the user can always drag
+                # the ellipse from its middle.
+                if rx < tol and ry < tol:
+                    if math.hypot(mx - mid_x, my - mid_y) <= tol:
+                        return _DragState("circle-move", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
                 # Top handle
                 if math.hypot(mx - mid_x, my - top_e) <= tol:
                     return _DragState("circle-top", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
@@ -1141,8 +1154,6 @@ class PDFViewerPanel(QWidget):
                 if math.hypot(mx - left, my - mid_y) <= tol:
                     return _DragState("circle-left", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
                 # Move: grab near the ellipse perimeter
-                rx = (right - left) / 2
-                ry = (bottom_e - top_e) / 2
                 if rx > 0 and ry > 0:
                     ndist = math.hypot((mx - mid_x) / rx, (my - mid_y) / ry)
                     if abs(ndist - 1.0) <= tol / min(rx, ry):
