@@ -67,6 +67,8 @@ class GradingScheme:
         return sum(sq.max_points for _, sq in self.all_subquestions())
 
 
+BONUS_MALUS_KEY = "_bonus_malus"
+
 _MIN_ROUNDING_STEP = 0.001
 
 
@@ -76,10 +78,13 @@ def compute_grade(total: float, score_total: float, max_note: float,
 
     This is the single authoritative implementation of the grade formula used
     by the grading panel, the CSV/XLSX export, and the cover-page generator.
+
+    The result is capped at *max_note* and floored at 0.
     """
     if score_total <= 0:
         return 0.0
     raw = (total / score_total) * max_note
     step = max(_MIN_ROUNDING_STEP, rounding)
-    return round(raw / step) * step
+    grade = round(raw / step) * step
+    return max(0.0, min(grade, max_note))
 
