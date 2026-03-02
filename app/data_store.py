@@ -115,7 +115,7 @@ def _atomic_json_write(path: str, data) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
         os.replace(tmp_path, path)
-    except BaseException:
+    except Exception:
         # Clean up the temp file on any failure
         try:
             os.unlink(tmp_path)
