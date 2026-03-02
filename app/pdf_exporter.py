@@ -144,7 +144,8 @@ def _insert_cover_page(
 
     # ── Bonus/malus line (only if nonzero) ────────────────────────────
     if bonus_malus != 0 and y <= ph - margin:
-        bm_label = f"Bonus/malus:  {'+' if bonus_malus > 0 else ''}{_fmt(bonus_malus)}"
+        sign = "+" if bonus_malus > 0 else ""
+        bm_label = f"Bonus/malus:  {sign}{_fmt(bonus_malus)}"
         _left_text(page, bm_label, col_name_x, y, usable_w, fs_body, bold=True)
         y += line_gap
 
