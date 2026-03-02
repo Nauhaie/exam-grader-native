@@ -108,7 +108,8 @@ def _pm_logical_size(pm: Optional[QPixmap]) -> Tuple[int, int]:
 @dataclass
 class _DragState:
     kind: str        # 'point'|'line-start'|'line-end'|'line-move'|
-                     # 'circle-top'|'circle-right'|'circle-move'|'text-resize'
+                     # 'circle-top'|'circle-right'|'circle-bottom'|'circle-left'|
+                     # 'circle-move'|'text-resize'
     index: int       # index in _annotations
     start_fx: float
     start_fy: float
@@ -1048,12 +1049,28 @@ class PDFViewerPanel(QWidget):
             ann.x2, ann.y2 = cl(d.orig_x2 + dx), cl(d.orig_y2 + dy)
         elif d.kind == "circle-top":
             # Move the top edge of the bounding rectangle
-            ann.y = cl(d.orig_y + dy) if d.orig_y <= d.orig_y2 else ann.y
-            ann.y2 = cl(d.orig_y2 + dy) if d.orig_y2 < d.orig_y else ann.y2
+            if d.orig_y <= d.orig_y2:
+                ann.y = cl(d.orig_y + dy)
+            else:
+                ann.y2 = cl(d.orig_y2 + dy)
+        elif d.kind == "circle-bottom":
+            # Move the bottom edge of the bounding rectangle
+            if d.orig_y >= d.orig_y2:
+                ann.y = cl(d.orig_y + dy)
+            else:
+                ann.y2 = cl(d.orig_y2 + dy)
         elif d.kind == "circle-right":
             # Move the right edge of the bounding rectangle
-            ann.x = cl(d.orig_x + dx) if d.orig_x >= d.orig_x2 else ann.x
-            ann.x2 = cl(d.orig_x2 + dx) if d.orig_x2 > d.orig_x else ann.x2
+            if d.orig_x >= d.orig_x2:
+                ann.x = cl(d.orig_x + dx)
+            else:
+                ann.x2 = cl(d.orig_x2 + dx)
+        elif d.kind == "circle-left":
+            # Move the left edge of the bounding rectangle
+            if d.orig_x <= d.orig_x2:
+                ann.x = cl(d.orig_x + dx)
+            else:
+                ann.x2 = cl(d.orig_x2 + dx)
         elif d.kind == "circle-move":
             ann.x,  ann.y  = cl(d.orig_x  + dx), cl(d.orig_y  + dy)
             ann.x2, ann.y2 = cl(d.orig_x2 + dx), cl(d.orig_y2 + dy)
@@ -1115,6 +1132,12 @@ class PDFViewerPanel(QWidget):
                 # Right handle
                 if math.hypot(mx - right, my - mid_y) <= tol:
                     return _DragState("circle-right", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+                # Bottom handle
+                if math.hypot(mx - mid_x, my - bottom_e) <= tol:
+                    return _DragState("circle-bottom", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+                # Left handle
+                if math.hypot(mx - left, my - mid_y) <= tol:
+                    return _DragState("circle-left", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
                 # Move: grab near the ellipse perimeter
                 rx = (right - left) / 2
                 ry = (bottom_e - top_e) / 2

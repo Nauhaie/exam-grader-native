@@ -39,7 +39,6 @@ contain:
 ```
 my_project/
   exams/          ← one PDF per student, named <student_number>.pdf
-  config.json     ← grading scheme + export filename template
   students.csv    ← student roster
 ```
 
@@ -48,26 +47,37 @@ project on first use:
 
 ```
 my_project/
-  data/           ← internal: grades.json, annotations/
-  export/         ← exported grades (grades.csv, grades.xlsx)
+  data/             ← internal: config.json, grades.json, annotations/
+  export/           ← exported grades (grades.csv, grades.xlsx)
   export/annotated/ ← annotated PDFs
 ```
 
+> **Note:** The `data/` directory is managed by the application. Do not modify
+> its contents manually, and certainly not while the app is running.
+
 A ready-to-use example can be found in the `sample_project/` folder.
 
-### config.json format
+### config.json
 
-Below is a minimal `config.json` required to start a project (other options stored in this file will be set from within the app):
+The configuration file `data/config.json` is **created automatically** with
+sensible defaults the first time a project is opened.  If an app update
+introduces new options that are not yet present in an existing `config.json`,
+the missing keys are filled in with their default values.
+
+The default grading scheme has two exercises (1a, 1b, 1c and 2a, 2b).
+All settings — grading parameters, export template, exercises, preset
+annotations — can be changed from within the app via **Project → Settings…**.
+
+Below is the simplified JSON format used for exercises:
 
 ```json
 {
-  "export_filename_template": "{student_number}_annotated",
   "exercises": [
     {
       "name": "Exercise 1",
       "subquestions": [
-        { "name": "1a", "max_points": 3 },
-        { "name": "1b", "max_points": 4 }
+        ["1a", 3],
+        ["1b", 4]
       ]
     }
   ]
@@ -117,18 +127,18 @@ shown in the grading panel.
 | T | **T** | Text note (click to place, **Enter** = newline, **Ctrl+Enter** = confirm, **Esc** = cancel; double-click existing note to edit) |
 | ╱ | **L** | Line (red) |
 | → | **A** | Arrow (red) |
-| ○ | **O** | Circle (red, resize handle shown at the bottom) |
+| ○ | **O** | Ellipse (red, handles at top, right, bottom, and left for reshaping) |
 | ~ | **N** | Approx/tilde (orange, "approximately correct") |
 | ⊠ | **R** | Rect cross (red, X drawn inside a rectangle) |
 | S | **S** | Stamp (place a preset text annotation; see Settings → Preset Annotations) |
 | ⌫ | **E** | Eraser (click annotation to delete) |
 
-For **line / arrow / circle**: click once to set the start point, click again to finish.  
+For **line / arrow / ellipse**: click once to set the start point, click again to finish.  
 Press **Esc** to cancel a shape in progress.
 
 To **move or resize** an existing annotation: select no tool (press the active tool button
 again to deselect), then hover over the annotation (a grab cursor appears) and drag it.
-For circles, drag the blue handle at the bottom to resize, or drag the circumference to move.
+For ellipses, drag any of the four blue handles (top/right/bottom/left) to reshape, or drag the perimeter to move.
 
 ---
 
@@ -144,6 +154,7 @@ For circles, drag the blue handle at the bottom to resize, or drag the circumfer
 | **Shift + Alt + →** | Next student |
 | **Shift + Alt + ←** | Previous student |
 | **P** | Jump grading focus to current student (see [Grading workflow](#grading-workflow) for details) |
+| **Cmd+1 / Cmd+2** (macOS) or **Ctrl+1 / Ctrl+2** | Switch between PDF Viewer and Grading Sheet windows (separate-window mode only) |
 | **Ctrl + scroll** | Zoom in / out |
 | Pinch gesture (macOS) | Zoom in / out |
 

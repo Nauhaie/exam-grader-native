@@ -317,11 +317,13 @@ def _draw_one(painter: QPainter, ann: Annotation, cx: int, cy: int, w: int, h: i
         top, bottom = min(cy, ey2), max(cy, ey2)
         if right - left > 0 and bottom - top > 0:
             painter.drawEllipse(left, top, right - left, bottom - top)
-        # Handles at top-centre and right-centre of the bounding rectangle
+        # Handles at top, right, bottom, left of the bounding rectangle
         mid_x = (left + right) // 2
         mid_y = (top + bottom) // 2
-        _draw_handle(painter, mid_x, top, s)     # top handle
-        _draw_handle(painter, right, mid_y, s)    # right handle
+        _draw_handle(painter, mid_x, top, s)      # top
+        _draw_handle(painter, right, mid_y, s)     # right
+        _draw_handle(painter, mid_x, bottom, s)    # bottom
+        _draw_handle(painter, left, mid_y, s)      # left
 
     elif ann.type == "rectcross" and ann.x2 is not None and ann.y2 is not None:
         x2 = int(ann.x2 * w)
