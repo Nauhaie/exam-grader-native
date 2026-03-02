@@ -152,14 +152,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Settings", "Open a project first.")
             return
         exam_pts = self._grading_panel.exam_max_points()
-        # Collect the union of all extra field names across all students
-        extra_names: List[str] = []
-        seen: set = set()
-        for s in self._students:
-            for k in s.extra_fields:
-                if k not in seen:
-                    seen.add(k)
-                    extra_names.append(k)
+        extra_names = self._extra_field_names()
         dlg = SettingsDialog(
             self._grading_settings,
             self._grading_scheme,
