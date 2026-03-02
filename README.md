@@ -57,7 +57,7 @@ A ready-to-use example can be found in the `sample_project/` folder.
 
 ### config.json format
 
-Below is the minimal `config.json` required to start a project:
+Below is a minimal `config.json` required to start a project (other options stored in this file will be set from within the app):
 
 ```json
 {
