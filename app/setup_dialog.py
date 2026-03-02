@@ -29,7 +29,6 @@ class SetupDialog(QDialog):
             "The project directory must contain:<br>"
             "&nbsp;&nbsp;• <tt>exams/</tt> — one PDF per student, named "
             "<tt>&lt;student_number&gt;.pdf</tt><br>"
-            "&nbsp;&nbsp;• <tt>config.json</tt> — grading scheme and export template<br>"
             "&nbsp;&nbsp;• <tt>students.csv</tt> — student roster"
         ))
         layout.addSpacing(8)
@@ -79,11 +78,6 @@ class SetupDialog(QDialog):
         if not os.path.isdir(os.path.join(project_dir, "exams")):
             self._error_label.setText(
                 "Missing 'exams/' sub-directory inside the project directory."
-            )
-            return
-        if not os.path.isfile(os.path.join(project_dir, "config.json")):
-            self._error_label.setText(
-                "Missing 'config.json' inside the project directory."
             )
             return
         if not os.path.isfile(os.path.join(project_dir, "students.csv")):

@@ -28,6 +28,16 @@ _BLACK  = (0, 0, 0)
 _GREY   = (0.35, 0.35, 0.35)
 
 
+def _fmt(x: float) -> str:
+    """Format a number as a decimal string, never using scientific notation.
+
+    Integers are shown without a decimal point (e.g. ``42``, not ``42.0``).
+    """
+    if x == int(x) and abs(x) < 1e15:
+        return str(int(x))
+    return f"{x:.10f}".rstrip("0").rstrip(".")
+
+
 # ── Cover page ────────────────────────────────────────────────────────────────
 
 def _insert_cover_page(
@@ -84,12 +94,12 @@ def _insert_cover_page(
     y += fs_title * 2.0
 
     # ── Mark ──────────────────────────────────────────────────────────────
-    mark_str = f"{mark:g}/{settings.max_note:g}"
+    mark_str = f"{_fmt(mark)}/{_fmt(settings.max_note)}"
     _centered_text(page, mark_str, cx, y, pw - 2 * margin, fs_mark, bold=True)
     y += fs_mark * 1.6
 
     # ── Total points ──────────────────────────────────────────────────────
-    _centered_text(page, f"Total: {points_total:g}/{score_total:g} pts",
+    _centered_text(page, f"Total: {_fmt(points_total)}/{_fmt(score_total)} pts",
                    cx, y, pw - 2 * margin, fs_body, color=_GREY)
     y += fs_body * 2.5
 
@@ -109,9 +119,9 @@ def _insert_cover_page(
 
         if settings.cover_page_detail and ex.subquestions:
             # Compact: exercise name + total in bold, then subquestion scores in normal weight
-            parts = [f"{sq.name}: {(student_scores.get(sq.name, 0) or 0):g}/{sq.max_points:g}"
+            parts = [f"{sq.name}: {_fmt((student_scores.get(sq.name, 0) or 0))}/{_fmt(sq.max_points)}"
                      for sq in ex.subquestions]
-            ex_prefix = f"{ex.name}:  {ex_pts:g}/{ex_max:g}"
+            ex_prefix = f"{ex.name}:  {_fmt(ex_pts)}/{_fmt(ex_max)}"
             detail_str = "  (" + ", ".join(parts) + ")"
             # Measure the bold prefix width so the detail part starts right after it
             try:
@@ -124,7 +134,7 @@ def _insert_cover_page(
                        max(1.0, usable_w - prefix_w), fs_small)
         else:
             # Exercise header line only
-            ex_label = f"{ex.name}:  {ex_pts:g}/{ex_max:g}"
+            ex_label = f"{ex.name}:  {_fmt(ex_pts)}/{_fmt(ex_max)}"
             _left_text(page, ex_label, col_name_x, y, usable_w, fs_body, bold=True)
         y += line_gap
 
@@ -134,7 +144,8 @@ def _insert_cover_page(
 
     # ── Bonus/malus line (only if nonzero) ────────────────────────────
     if bonus_malus != 0 and y <= ph - margin:
-        bm_label = f"Bonus/malus:  {bonus_malus:+g}"
+        sign = "+" if bonus_malus > 0 else ""
+        bm_label = f"Bonus/malus:  {sign}{_fmt(bonus_malus)}"
         _left_text(page, bm_label, col_name_x, y, usable_w, fs_body, bold=True)
         y += line_gap
 
@@ -299,7 +310,7 @@ def bake_annotations(pdf_path: str, annotations: List[Annotation], output_path: 
                             p2 = to_draw(ann.x2 * pw, ann.y2 * ph)
                             _log(f"       draw_arrow : {p1} → {p2}")
                             _draw_arrow(page, p1[0], p1[1], p2[0], p2[1], s)
-                        elif ann.type == "circle" and ann.x2 is not None and ann.y2 is not None:
+                        elif ann.type == "ellipse" and ann.x2 is not None and ann.y2 is not None:
                             # Ellipse inscribed in the bounding rectangle
                             p1 = to_draw(cx_v, cy_v)
                             p2 = to_draw(ann.x2 * pw, ann.y2 * ph)

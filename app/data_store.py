@@ -157,11 +157,19 @@ def _default_config() -> dict:
             "score_total": None,
             "debug_mode": False,
             "cover_page_detail": False,
-            "hi_dpr": True,
+            "hi_dpr": False,
             "grading_separate_window": False,
             "show_extra_fields": False,
         },
-        "preset_annotations": [],
+        "preset_annotations": [
+            "Justification...",
+            "R\u00e9daction...",
+            "Simplifier",
+            "Calcul",
+            "Hypoth\u00e8ses",
+            "Notation incorrecte",
+            "Coh\u00e9rent avec erreur pr\u00e9c\u00e9dente",
+        ],
         "exercises": [
             {
                 "name": "Exercise 1",
@@ -269,7 +277,7 @@ def load_grading_settings_from_config(config_data: dict) -> GradingSettings:
         score_total=float(raw_st) if raw_st is not None else None,
         debug_mode=bool(gs.get("debug_mode", False)),
         cover_page_detail=bool(gs.get("cover_page_detail", False)),
-        hi_dpr=bool(gs.get("hi_dpr", True)),
+        hi_dpr=bool(gs.get("hi_dpr", False)),
         grading_separate_window=bool(gs.get("grading_separate_window", False)),
         show_extra_fields=bool(gs.get("show_extra_fields", False)),
     )
@@ -390,9 +398,13 @@ def load_annotations(student_number: str) -> List[Annotation]:
         data = json.load(f)
     annotations = []
     for item in data:
+        ann_type = item["type"]
+        # Migrate legacy "circle" → "ellipse"
+        if ann_type == "circle":
+            ann_type = "ellipse"
         annotations.append(Annotation(
             page=item["page"],
-            type=item["type"],
+            type=ann_type,
             x=item["x"],
             y=item["y"],
             text=item.get("text"),

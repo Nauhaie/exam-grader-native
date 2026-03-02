@@ -17,12 +17,12 @@ class Student:
 @dataclass
 class Annotation:
     page: int  # 0-based page index
-    type: str  # "checkmark", "cross", "text", "line", "arrow", "circle", "rectcross"
+    type: str  # "checkmark", "cross", "text", "line", "arrow", "ellipse", "rectcross"
     x: float   # fractional coordinate 0.0–1.0
     y: float   # fractional coordinate 0.0–1.0
     text: Optional[str] = None   # only for type "text"
-    x2: Optional[float] = None   # end point (line/arrow) or edge point (circle)
-    y2: Optional[float] = None   # end point (line/arrow) or edge point (circle)
+    x2: Optional[float] = None   # end point (line/arrow) or edge point (ellipse)
+    y2: Optional[float] = None   # end point (line/arrow) or edge point (ellipse)
     width: Optional[float] = None  # text box width as fraction of page width
     # height is NOT stored; it is always computed automatically from content
 
@@ -34,7 +34,7 @@ class GradingSettings:
     score_total: Optional[float] = None  # denominator; None = sum of all exam points
     debug_mode: bool = False        # print debug messages and write .log files
     cover_page_detail: bool = False # cover page: True = show subquestion detail, False = per-exercise only
-    hi_dpr: bool = True             # use high DPI rendering (Retina); disable for speed
+    hi_dpr: bool = False            # use high DPI rendering (Retina); disable for speed
     grading_separate_window: bool = False  # show grading sheet in a separate window
     show_extra_fields: bool = False  # show extra CSV columns in the grading panel
 
