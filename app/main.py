@@ -223,6 +223,7 @@ class MainWindow(QMainWindow):
         self._pdf_viewer.load_pdf(pdf_path, annotations)
         elapsed = time.perf_counter() - t0
         data_store.dbg(f"Student grading view loaded in {elapsed:.3f}s")
+        self._update_window_title()
 
     def _on_student_selected(self, student):
         if student is None:
@@ -519,6 +520,19 @@ class MainWindow(QMainWindow):
 
         # Show/hide the Window menu depending on separate-window mode
         self._window_menu.menuAction().setVisible(want_separate)
+        self._update_window_title()
+
+    def _update_window_title(self):
+        """Update the main window title to reflect the current mode and student."""
+        if self._grading_settings.grading_separate_window:
+            if self._current_student is not None:
+                self.setWindowTitle(
+                    f"Exam Grader — PDF Viewer — {self._current_student.display_name()}"
+                )
+            else:
+                self.setWindowTitle("Exam Grader — PDF Viewer")
+        else:
+            self.setWindowTitle("Exam Grader")
 
     def _activate_main_window(self):
         """Bring the main (PDF viewer) window to front."""

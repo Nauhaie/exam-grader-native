@@ -58,8 +58,10 @@ class _HighlightDelegate(QStyledItemDelegate):
 
     def createEditor(self, parent, option, index):
         editor = super().createEditor(parent, option, index)
-        if editor is not None and self._editor_opened_callback is not None:
-            self._editor_opened_callback(index.row(), index.column())
+        if editor is not None:
+            editor.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            if self._editor_opened_callback is not None:
+                self._editor_opened_callback(index.row(), index.column())
         return editor
 
     def paint(self, painter, option: QStyleOptionViewItem, index):

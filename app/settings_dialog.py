@@ -231,24 +231,6 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(w)
         layout.setContentsMargins(12, 12, 12, 12)
 
-        self._debug_cb = QCheckBox("Enable debug mode")
-        self._debug_cb.setChecked(settings.debug_mode)
-        layout.addWidget(self._debug_cb)
-
-        debug_hint = QLabel(
-            "When enabled, detailed messages are printed to the terminal "
-            "throughout the application — when loading PDFs, project data, "
-            "annotations, navigating pages, switching students, exporting, etc. "
-            "A <tt>.log</tt> file is also written in the <tt>logs</tt> subfolder "
-            "of the annotated PDF export directory."
-        )
-        debug_hint.setWordWrap(True)
-        debug_hint.setStyleSheet("color: #555;")
-        debug_hint.setContentsMargins(20, 2, 0, 0)
-        layout.addWidget(debug_hint)
-
-        layout.addSpacing(12)
-
         self._hi_dpr_cb = QCheckBox("Enable high-DPI (Retina) rendering")
         self._hi_dpr_cb.setChecked(settings.hi_dpr)
         layout.addWidget(self._hi_dpr_cb)
@@ -295,6 +277,23 @@ class SettingsDialog(QDialog):
         layout.addWidget(show_extra_hint)
 
         layout.addStretch()
+
+        self._debug_cb = QCheckBox("Enable debug mode")
+        self._debug_cb.setChecked(settings.debug_mode)
+        layout.addWidget(self._debug_cb)
+
+        debug_hint = QLabel(
+            "When enabled, detailed messages are printed to the terminal "
+            "throughout the application — when loading PDFs, project data, "
+            "annotations, navigating pages, switching students, exporting, etc. "
+            "A <tt>.log</tt> file is also written in the <tt>logs</tt> subfolder "
+            "of the annotated PDF export directory."
+        )
+        debug_hint.setWordWrap(True)
+        debug_hint.setStyleSheet("color: #555;")
+        debug_hint.setContentsMargins(20, 2, 0, 0)
+        layout.addWidget(debug_hint)
+
         return w
 
     def _build_presets_tab(self, presets: List[str]) -> QWidget:
