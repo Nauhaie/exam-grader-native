@@ -148,25 +148,6 @@ class SettingsDialog(QDialog):
 
         layout.addSpacing(8)
 
-        self._smaller_font_cb = QCheckBox("Smaller font size in grading table")
-        self._smaller_font_cb.setChecked(settings.smaller_font)
-        self._smaller_font_cb.setToolTip(
-            "When enabled, the grading table uses a smaller font and reduced cell\n"
-            "padding to display more information in less space."
-        )
-        layout.addWidget(self._smaller_font_cb)
-
-        smaller_font_hint = QLabel(
-            "Reduces the font size and cell padding in the grading spreadsheet, "
-            "making the table more compact so more columns are visible at once."
-        )
-        smaller_font_hint.setWordWrap(True)
-        smaller_font_hint.setStyleSheet("color: #555;")
-        smaller_font_hint.setContentsMargins(20, 2, 0, 0)
-        layout.addWidget(smaller_font_hint)
-
-        layout.addSpacing(8)
-
         self._preview = QLabel()
         self._preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._preview.setStyleSheet("color: #444; font-style: italic;")
@@ -176,6 +157,25 @@ class SettingsDialog(QDialog):
         self._max_note_spin.valueChanged.connect(self._update_preview)
         self._rounding_spin.valueChanged.connect(self._update_preview)
         self._score_total_spin.valueChanged.connect(self._update_preview)
+
+        layout.addSpacing(8)
+
+        self._compact_table_cb = QCheckBox("Compact grading table")
+        self._compact_table_cb.setChecked(settings.compact_table)
+        self._compact_table_cb.setToolTip(
+            "When enabled, the grading table uses a smaller font and reduced cell\n"
+            "padding to display more information in less space."
+        )
+        layout.addWidget(self._compact_table_cb)
+
+        compact_table_hint = QLabel(
+            "Reduces the font size and cell padding in the grading spreadsheet, "
+            "making the table more compact so more columns are visible at once."
+        )
+        compact_table_hint.setWordWrap(True)
+        compact_table_hint.setStyleSheet("color: #555;")
+        compact_table_hint.setContentsMargins(20, 2, 0, 0)
+        layout.addWidget(compact_table_hint)
 
         layout.addStretch()
         return w
@@ -640,7 +640,7 @@ class SettingsDialog(QDialog):
             hi_dpr=self._hi_dpr_cb.isChecked(),
             grading_separate_window=self._separate_window_cb.isChecked(),
             show_extra_fields=self._show_extra_cb.isChecked(),
-            smaller_font=self._smaller_font_cb.isChecked(),
+            compact_table=self._compact_table_cb.isChecked(),
         )
 
     def get_export_template(self) -> str:

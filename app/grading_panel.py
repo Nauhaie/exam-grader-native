@@ -28,6 +28,15 @@ import data_store
 _HEADER_ROWS = 3        # exercise row · subquestion row · max-points row
 _FROZEN_COLS = 2        # Student, Number columns are always visible
 
+# Cell padding (px) for normal / compact display modes.
+# H_PAD: total horizontal padding (left + right) added to text width for min-column-width.
+# V_PAD: total vertical padding added to font height for the default row height.
+# The CSS strings in _apply_compact_mode must stay consistent with these values.
+_H_PAD_NORMAL  = 8   # CSS padding: 3px 4px  → 4 px/side × 2 = 8 px total
+_H_PAD_COMPACT = 4   # CSS padding: 1px 2px  → 2 px/side × 2 = 4 px total
+_V_PAD_NORMAL  = 8   # CSS padding: 3px 4px  → 3 px/side × 2 = 6 px + 2 px clearance
+_V_PAD_COMPACT = 4   # CSS padding: 1px 2px  → 1 px/side × 2 = 2 px + 2 px clearance
+
 # Header background colours
 _BG_EX   = QColor(180, 198, 230)   # exercise name row
 _BG_SQ   = QColor(210, 224, 245)   # subquestion name row
@@ -154,12 +163,8 @@ class GradingPanel(QWidget):
         )
         hdr = self._table.horizontalHeader()
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        # Prevent grading columns from shrinking below the width of a value like
-        # "2.5".  ResizeToContents will still grow columns when needed, but will
-        # never make them narrower than this lower bound.
-        # 16 px = 8 px cell padding on each side.
-        _min_col_w = self._table.fontMetrics().horizontalAdvance("2.5") + 16
-        hdr.setMinimumSectionSize(_min_col_w)
+        # Minimum section size and default row height are set by _apply_compact_mode,
+        # which is called from set_grading_settings before the table is first shown.
         # The built-in single-row header is replaced by 3 data rows at the top
         hdr.setVisible(False)
         self._table.verticalHeader().setVisible(False)
@@ -258,19 +263,23 @@ class GradingPanel(QWidget):
         if settings.show_extra_fields != self._show_extra:
             self._show_extra = settings.show_extra_fields
             self._update_search_modes()
-        self._apply_compact_mode(settings.smaller_font)
+        self._apply_compact_mode(settings.compact_table)
         self._rebuild_table()
 
     def _apply_compact_mode(self, smaller: bool):
-        """Apply smaller font + reduced cell padding via CSS, or restore defaults."""
+        """Apply compact display (smaller font + reduced cell padding) via CSS, or restore defaults."""
         app_font = QApplication.font()
         if smaller:
             font = QFont(app_font)
             font.setPointSize(max(7, app_font.pointSize() - 2))
             item_padding = "1px 2px"
+            h_pad = _H_PAD_COMPACT
+            v_pad = _V_PAD_COMPACT
         else:
             font = app_font
             item_padding = "3px 4px"
+            h_pad = _H_PAD_NORMAL
+            v_pad = _V_PAD_NORMAL
         self._table.setFont(font)
         self._table.setStyleSheet(
             f"QTableWidget::item {{ padding: {item_padding}; }}"
@@ -282,9 +291,12 @@ class GradingPanel(QWidget):
                 f"QTableView::item {{ padding: {item_padding}; }}"
             )
         fm = QFontMetrics(font)
-        pad_px = 8 if smaller else 16
-        _min_col_w = fm.horizontalAdvance("2.5") + pad_px
-        self._table.horizontalHeader().setMinimumSectionSize(_min_col_w)
+        self._table.horizontalHeader().setMinimumSectionSize(
+            fm.horizontalAdvance("2.5") + h_pad)
+        row_h = fm.height() + v_pad
+        self._table.verticalHeader().setDefaultSectionSize(row_h)
+        for r in range(self._table.rowCount()):
+            self._table.setRowHeight(r, row_h)
 
     def exam_max_points(self) -> float:
         """Return the sum of all subquestion max points."""
