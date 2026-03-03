@@ -29,13 +29,14 @@ _HEADER_ROWS = 3        # exercise row · subquestion row · max-points row
 _FROZEN_COLS = 2        # Student, Number columns are always visible
 
 # Cell padding (px) for normal / compact display modes.
-# H_PAD: total horizontal padding (left + right) added to text width for min-column-width.
+# H_PAD: buffer (px) added to "0.0" text width for minimum column width.
+#         CSS horizontal padding is kept at 0; Qt's internal style margin handles visual spacing.
 # V_PAD: total vertical padding added to font height for the default row height.
-# The CSS strings in _apply_compact_mode must stay consistent with these values.
-_H_PAD_NORMAL  = 4   # CSS padding: 2px  → 2 px/side × 2 = 4 px total
-_H_PAD_COMPACT = 2   # CSS padding: 1px  → 1 px/side × 2 = 2 px total
-_V_PAD_NORMAL  = 8   # CSS padding: 3px  → 3 px/side × 2 = 6 px + 2 px clearance
-_V_PAD_COMPACT = 4   # CSS padding: 1px  → 1 px/side × 2 = 2 px + 2 px clearance
+#         The CSS v-padding strings in _apply_compact_mode must stay consistent with these values.
+_H_PAD_NORMAL  = 4   # 4 px buffer for minimumSectionSize in normal mode
+_H_PAD_COMPACT = 2   # 2 px buffer for minimumSectionSize in compact mode
+_V_PAD_NORMAL  = 8   # CSS padding-top/bottom: 2px → 4 px total + 4 px clearance
+_V_PAD_COMPACT = 4   # CSS padding-top/bottom: 1px → 2 px total + 2 px clearance
 
 # Header background colours
 _BG_EX   = QColor(180, 198, 230)   # exercise name row
@@ -48,9 +49,12 @@ _COL_ACTIVE_TINT = QColor(30, 100, 220, 70)  # semi-transparent tint for active 
 _SQ_HEADER_ROW = 1  # row index of the subquestion name within the header rows
 
 # Grade text colours based on percentage of max grade
-_GRADE_COLOR_LOW    = QColor(180, 30, 30)    # 0–40 %: dark red
+_GRADE_COLOR_LOW    = QColor(180, 30, 30)    # < 40 %: dark red
 _GRADE_COLOR_MID    = QColor(200, 130, 0)    # 40–50 %: darkish orange
-_GRADE_COLOR_HIGH   = QColor(30, 130, 30)    # > 50 %: dark green
+_GRADE_COLOR_HIGH   = QColor(30, 130, 30)    # ≥ 50 %: dark green
+
+_GRADE_THRESHOLD_MID  = 0.40   # below this → LOW (red);  at/above → MID (orange)
+_GRADE_THRESHOLD_HIGH = 0.50   # below this → MID (orange); at/above → HIGH (green)
 
 
 class _HighlightDelegate(QStyledItemDelegate):
@@ -281,23 +285,26 @@ class GradingPanel(QWidget):
         if smaller:
             font = QFont(app_font)
             font.setPointSize(max(7, app_font.pointSize() - 2))
-            item_padding = "1px"
+            v_padding = "1px"
             h_pad = _H_PAD_COMPACT
             v_pad = _V_PAD_COMPACT
         else:
             font = app_font
-            item_padding = "2px"
+            v_padding = "2px"
             h_pad = _H_PAD_NORMAL
             v_pad = _V_PAD_NORMAL
+        # Horizontal padding is kept at 0 in CSS; minimumSectionSize (below) ensures
+        # columns are not too narrow. Only vertical padding is applied via CSS.
+        css_item = f"padding: {v_padding} 0"
         self._table.setFont(font)
         self._table.setStyleSheet(
-            f"QTableWidget::item {{ padding: {item_padding}; }}"
+            f"QTableWidget::item {{ {css_item}; }}"
         )
         for fz in (self._fz_corner, self._fz_header, self._fz_left):
             fz.setFont(font)
             fz.setStyleSheet(
                 f"QTableView {{ border: none; }} "
-                f"QTableView::item {{ padding: {item_padding}; }}"
+                f"QTableView::item {{ {css_item}; }}"
             )
         fm = QFontMetrics(font)
         self._table.horizontalHeader().setMinimumSectionSize(
@@ -469,9 +476,9 @@ class GradingPanel(QWidget):
         if mn <= 0:
             return QColor(0, 0, 0)
         pct = grade / mn
-        if pct <= 0.40:
+        if pct < _GRADE_THRESHOLD_MID:
             return _GRADE_COLOR_LOW
-        if pct <= 0.50:
+        if pct < _GRADE_THRESHOLD_HIGH:
             return _GRADE_COLOR_MID
         return _GRADE_COLOR_HIGH
 
@@ -532,14 +539,21 @@ class GradingPanel(QWidget):
                 it.setToolTip(text.replace("\n", " "))
             return it
 
-        # Fixed columns (Student, Number, Bonus/malus, Total, Grade/20, extras) span all 3 header rows
-        fixed_cols = [0, 1, bonus_col, total_col, grade_col] + list(range(extra_start, extra_start + extra_count))
-        fixed_labels = ["Student", "Number", "Bonus/malus", "Total", self._grade_label()] + extra_names
+        # Fixed columns (Student, Number, Total, Grade/20, extras) span all 3 header rows
+        fixed_cols = [0, 1, total_col, grade_col] + list(range(extra_start, extra_start + extra_count))
+        fixed_labels = ["Student", "Number", "Total", self._grade_label()] + extra_names
         for c, label in zip(fixed_cols, fixed_labels):
             self._table.setSpan(0, c, _HEADER_ROWS, 1)
             self._table.setItem(0, c, _hdr(label, _BG_MISC, bold=True))
             for r in (1, 2):
                 self._table.setItem(r, c, _hdr("", _BG_MISC))
+
+        # Bonus/malus column: 3-row header like grading cells (keeps column narrow)
+        self._table.setItem(0, bonus_col, _hdr("", _BG_MISC))
+        bm_hdr = _hdr("B/M", _BG_SQ)
+        bm_hdr.setToolTip("Bonus / malus")
+        self._table.setItem(1, bonus_col, bm_hdr)
+        self._table.setItem(2, bonus_col, _hdr("", _BG_MAX))
 
         # Grade columns: group by exercise for row-0 spans
         ex_groups: Dict[str, List[int]] = {}   # exercise name → list of sq col offsets
@@ -1045,9 +1059,12 @@ class GradingPanel(QWidget):
 
         # Header: replicate the same spans as the main table for header rows
         self._fz_header.clearSpans()
-        # Fixed columns that span 3 header rows (Total, Grade, extras)
+        # Fixed columns that span 3 header rows (Total, Grade, extras).
+        # bonus_col is intentionally excluded here: it uses a 3-row header like
+        # grading cells (individual cells per row, no multi-row span).
+        bonus_col = sq_start + sq_count
         for c in range(_FROZEN_COLS, cc):
-            if c < sq_start or c >= sq_start + sq_count:
+            if c < sq_start or c > bonus_col:
                 self._fz_header.setSpan(0, c, _HEADER_ROWS, 1)
         # Exercise name spans in row 0
         ex_groups: Dict[str, List[int]] = {}

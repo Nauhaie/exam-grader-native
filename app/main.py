@@ -7,6 +7,8 @@ import time
 from typing import List
 
 import openpyxl
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.table import Table, TableStyleInfo
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
@@ -73,6 +75,8 @@ class MainWindow(QMainWindow):
         project_menu = self.menuBar().addMenu("Project")
         settings_action = project_menu.addAction("Settings…")
         settings_action.setMenuRole(QAction.MenuRole.NoRole)
+        # Cmd+, on macOS, Ctrl+, on Windows/Linux (Qt maps Ctrl → Cmd on macOS)
+        settings_action.setShortcut(QKeySequence(_WIN_MOD | Qt.Key.Key_Comma))
         settings_action.triggered.connect(self._show_settings)
         project_menu.addSeparator()
         project_menu.addAction("Export Grades as CSV").triggered.connect(self._export_csv)
@@ -326,6 +330,16 @@ class MainWindow(QMainWindow):
                 + [sg.get(sq.name, "") for sq in subquestions]
                 + [sg.get(BONUS_MALUS_KEY, ""), pts, grade]
             )
+        # Wrap data in an Excel table so it can be sorted/filtered directly in Excel
+        last_col = get_column_letter(ws.max_column)
+        last_row = ws.max_row
+        tab = Table(displayName="Grades", ref=f"A1:{last_col}{last_row}")
+        tab.tableStyleInfo = TableStyleInfo(
+            name="TableStyleMedium9",
+            showFirstColumn=False, showLastColumn=False,
+            showRowStripes=True, showColumnStripes=False,
+        )
+        ws.add_table(tab)
         wb.save(path)
         dlg = QMessageBox(QMessageBox.Icon.Information, "Export",
                           f"Grades exported to:\n{path}", parent=self)
