@@ -101,6 +101,9 @@ class _HighlightDelegate(QStyledItemDelegate):
                 # Remove the default 1-px frame so the text baseline and
                 # horizontal position match the non-edit cell rendering.
                 editor.setFrame(False)
+            # Intercept Ctrl+Z / Ctrl+Shift+Z so they cancel the in-progress
+            # cell edit instead of triggering the QLineEdit's local text undo.
+            editor.installEventFilter(self)
             if self._editor_opened_callback is not None:
                 self._editor_opened_callback(index.row(), index.column())
         return editor
@@ -109,6 +112,22 @@ class _HighlightDelegate(QStyledItemDelegate):
         super().destroyEditor(editor, index)
         if self._editor_closed_callback is not None:
             self._editor_closed_callback()
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.KeyPress:
+            mods = event.modifiers() & ~Qt.KeyboardModifier.KeypadModifier
+            if event.key() == Qt.Key.Key_Z and mods in (
+                Qt.KeyboardModifier.ControlModifier,
+                Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
+            ):
+                # Close the editor WITHOUT committing (discard the edit).
+                # The next Ctrl+Z press (outside the editor) will trigger
+                # the app-wide undo via the menu shortcut.
+                self.closeEditor.emit(
+                    obj, QStyledItemDelegate.EndEditHint.RevertModelCache,
+                )
+                return True
+        return super().eventFilter(obj, event)
 
     def paint(self, painter, option: QStyleOptionViewItem, index):
         # Suppress the built-in selection fill so grade colours are not overridden.
@@ -408,6 +427,39 @@ class GradingPanel(QWidget):
         if item is not None:
             self._table.editItem(item)
 
+    def focus_grade_cell(self, student_number: str, grade_key: str):
+        """Scroll to and select the specific grade cell identified by
+        *student_number* and *grade_key* (subquestion name or BONUS_MALUS_KEY).
+        Used by undo/redo to make the affected cell visible."""
+        filtered = self._filtered_students()
+        data_row = next(
+            (i for i, s in enumerate(filtered) if s.student_number == student_number),
+            -1,
+        )
+        if data_row < 0 or not self._subquestions:
+            return
+
+        sq_start = 2
+        row = _HEADER_ROWS + data_row
+
+        if grade_key == BONUS_MALUS_KEY:
+            col = sq_start + len(self._subquestions)
+        else:
+            sq_idx = next(
+                (i for i, sq in enumerate(self._subquestions) if sq.name == grade_key),
+                -1,
+            )
+            if sq_idx < 0:
+                return
+            col = sq_start + sq_idx
+
+        self._table.setFocus()
+        self._table.setCurrentCell(row, col)
+        self._table.scrollToItem(
+            self._table.item(row, col),
+            QAbstractItemView.ScrollHint.EnsureVisible,
+        )
+
     def preferred_width(self) -> int:
         """Return the preferred panel width based on current table column widths.
 
@@ -694,10 +746,7 @@ class GradingPanel(QWidget):
         avg_row = _HEADER_ROWS + len(filtered)
         included = [
             s for s in filtered
-            if any(
-                self._grades.get(s.student_number, {}).get(sq.name) is not None
-                for sq in self._subquestions
-            )
+            if self._has_any_grade(self._grades.get(s.student_number, {}))
         ]
         bold = QFont()
         bold.setBold(True)
