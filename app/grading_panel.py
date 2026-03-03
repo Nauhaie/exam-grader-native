@@ -33,8 +33,10 @@ _FROZEN_COLS = 2        # Student, Number columns are always visible
 #         CSS horizontal padding is kept at 0; Qt's internal style margin handles visual spacing.
 # V_PAD: total vertical padding added to font height for the default row height.
 #         The CSS v-padding strings in _apply_compact_mode must stay consistent with these values.
-_H_PAD_NORMAL  = 4   # 4 px buffer for minimumSectionSize in normal mode
-_H_PAD_COMPACT = 2   # 2 px buffer for minimumSectionSize in compact mode
+_H_PAD_NORMAL  = 0   # 0 px buffer for minimumSectionSize in normal mode
+_H_PAD_COMPACT = 0   # 0 px buffer for minimumSectionSize in compact mode
+_H_MINWIDTH_OFFSET_NORMAL  = 14
+_H_MINWIDTH_OFFSET_COMPACT = 14
 _V_PAD_NORMAL  = 8   # CSS padding-top/bottom: 2px → 4 px total + 4 px clearance
 _V_PAD_COMPACT = 4   # CSS padding-top/bottom: 1px → 2 px total + 2 px clearance
 
@@ -288,11 +290,14 @@ class GradingPanel(QWidget):
             v_padding = "1px"
             h_pad = _H_PAD_COMPACT
             v_pad = _V_PAD_COMPACT
+            h_minwidth_offset = _H_MINWIDTH_OFFSET_COMPACT
         else:
             font = app_font
             v_padding = "2px"
             h_pad = _H_PAD_NORMAL
             v_pad = _V_PAD_NORMAL
+            h_minwidth_offset = _H_MINWIDTH_OFFSET_NORMAL
+            
         # Horizontal padding is kept at 0 in CSS; minimumSectionSize (below) ensures
         # columns are not too narrow. Only vertical padding is applied via CSS.
         css_item = f"padding: {v_padding} 0"
@@ -308,7 +313,7 @@ class GradingPanel(QWidget):
             )
         fm = QFontMetrics(font)
         self._table.horizontalHeader().setMinimumSectionSize(
-            fm.horizontalAdvance("0.0") + h_pad)
+            fm.horizontalAdvance("0.0") + h_pad + h_minwidth_offset)
         row_h = fm.height() + v_pad
         self._table.verticalHeader().setDefaultSectionSize(row_h)
         for r in range(self._table.rowCount()):
