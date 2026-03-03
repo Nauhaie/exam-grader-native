@@ -75,8 +75,8 @@ class MainWindow(QMainWindow):
         project_menu = self.menuBar().addMenu("Project")
         settings_action = project_menu.addAction("Settings…")
         settings_action.setMenuRole(QAction.MenuRole.NoRole)
-        # Use the platform-standard Preferences shortcut (Cmd+, on macOS, Ctrl+, elsewhere)
-        settings_action.setShortcut(QKeySequence(QKeySequence.StandardKey.Preferences))
+        # Ctrl+, shows as Cmd+, on macOS and Ctrl+, on Win/Linux (standard, visible in menu)
+        settings_action.setShortcut(QKeySequence("Ctrl+,"))
         settings_action.triggered.connect(self._show_settings)
         project_menu.addSeparator()
         project_menu.addAction("Export Grades as CSV").triggered.connect(self._export_csv)
@@ -113,7 +113,7 @@ class MainWindow(QMainWindow):
         self._grading_panel.student_selected.connect(self._on_student_selected)
         self._splitter.addWidget(self._grading_panel)
 
-        self._splitter.setSizes([600, 800])
+        self._splitter.setSizes([900, 500])
 
     def _load_session(self):
         data_store.dbg("Loading previous session…")
@@ -528,7 +528,7 @@ class MainWindow(QMainWindow):
             # Re-attach to splitter
             self._grading_panel.setParent(None)
             self._splitter.addWidget(self._grading_panel)
-            self._splitter.setSizes([600, 800])
+            self._splitter.setSizes([900, 500])
             self._grading_window.close()
             self._grading_window = None
 

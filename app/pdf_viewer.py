@@ -59,7 +59,7 @@ _KEY_TOOL_MAP = {
     Qt.Key.Key_R: TOOL_RECTCROSS,
 }
 
-_DRAG_TOL = 20          # pixel hit-tolerance for drag handles
+_DRAG_TOL = 14          # pixel hit-tolerance for drag handles
 _WHEEL_ZOOM_DIVISOR = 800.0  # wheel-delta units that equal a 1× zoom step
 # Pan modifier: Cmd on macOS (MetaModifier maps to Cmd), Ctrl on Win/Linux
 _PAN_MOD = Qt.KeyboardModifier.MetaModifier | Qt.KeyboardModifier.ControlModifier
