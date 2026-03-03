@@ -131,8 +131,6 @@ class MainWindow(QMainWindow):
         self._grading_panel = GradingPanel()
         self._grading_panel.grade_changed.connect(self._on_grade_changed)
         self._grading_panel.student_selected.connect(self._on_student_selected)
-        self._grading_panel.undo_requested.connect(self._undo)
-        self._grading_panel.redo_requested.connect(self._redo)
         self._splitter.addWidget(self._grading_panel)
 
         self._splitter.setSizes([900, 500])
