@@ -32,7 +32,7 @@ _FROZEN_COLS = 2        # Student, Number columns are always visible
 # H_PAD: total horizontal padding (left + right) added to text width for min-column-width.
 # V_PAD: total vertical padding added to font height for the default row height.
 # The CSS strings in _apply_compact_mode must stay consistent with these values.
-_H_PAD_NORMAL  = 6   # CSS padding: 3px  → 3 px/side × 2 = 6 px total
+_H_PAD_NORMAL  = 4   # CSS padding: 2px  → 2 px/side × 2 = 4 px total
 _H_PAD_COMPACT = 2   # CSS padding: 1px  → 1 px/side × 2 = 2 px total
 _V_PAD_NORMAL  = 8   # CSS padding: 3px  → 3 px/side × 2 = 6 px + 2 px clearance
 _V_PAD_COMPACT = 4   # CSS padding: 1px  → 1 px/side × 2 = 2 px + 2 px clearance
@@ -86,6 +86,10 @@ class _HighlightDelegate(QStyledItemDelegate):
         editor = super().createEditor(parent, option, index)
         if editor is not None:
             editor.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            if isinstance(editor, QLineEdit):
+                # Remove the default 1-px frame so the text baseline and
+                # horizontal position match the non-edit cell rendering.
+                editor.setFrame(False)
             if self._editor_opened_callback is not None:
                 self._editor_opened_callback(index.row(), index.column())
         return editor
@@ -282,7 +286,7 @@ class GradingPanel(QWidget):
             v_pad = _V_PAD_COMPACT
         else:
             font = app_font
-            item_padding = "3px"
+            item_padding = "2px"
             h_pad = _H_PAD_NORMAL
             v_pad = _V_PAD_NORMAL
         self._table.setFont(font)
@@ -420,6 +424,17 @@ class GradingPanel(QWidget):
 
     def _max_total(self) -> float:
         return sum(sq.max_points for sq in self._subquestions)
+
+    def _has_any_grade(self, sg: dict) -> bool:
+        """Return True when at least one grading value has been entered.
+
+        An all-empty row (every cell is None) is distinct from a zero score,
+        and should not display a total or a grade.
+        """
+        return (
+            any(sg.get(sq.name) is not None for sq in self._subquestions)
+            or sg.get(BONUS_MALUS_KEY) is not None
+        )
 
     def _compute_grade(self, total: float) -> float:
         """Convert raw *total* points to a final grade using current settings."""
@@ -587,16 +602,23 @@ class GradingPanel(QWidget):
                 total += bm_val
             self._table.setItem(r, bonus_col, bm_item)
 
-            total_item = QTableWidgetItem(f"{total:.1f}")
+            # Only show total and grade when at least one cell is filled (not the
+            # same as zero – an empty row means no grading has been entered yet).
+            has_any_grade = self._has_any_grade(sg)
+            total_item = QTableWidgetItem("" if not has_any_grade else f"{total:.1f}")
             total_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             total_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self._table.setItem(r, total_col, total_item)
 
-            grade = self._compute_grade(total)
-            grade_item = QTableWidgetItem(f"{grade:g}")
+            grade = self._compute_grade(total) if has_any_grade else 0.0
+            grade_item = QTableWidgetItem("" if not has_any_grade else f"{grade:g}")
             grade_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             grade_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            grade_item.setForeground(self._grade_text_color(grade))
+            if has_any_grade:
+                grade_item.setForeground(self._grade_text_color(grade))
+            gf = grade_item.font()
+            gf.setBold(True)
+            grade_item.setFont(gf)
             self._table.setItem(r, grade_col, grade_item)
 
             for ei, ename in enumerate(extra_names):
@@ -786,16 +808,18 @@ class GradingPanel(QWidget):
         total_col = bonus_col + 1
         grade_col = bonus_col + 2
         sg = self._grades.get(student.student_number, {})
+        has_any_grade = self._has_any_grade(sg)
         total = sum(sg.get(sq.name, 0) or 0 for sq in self._subquestions)
         total += sg.get(BONUS_MALUS_KEY, 0) or 0
         total_item = self._table.item(row, total_col)
         if total_item:
-            total_item.setText(f"{total:.1f}")
-        grade = self._compute_grade(total)
+            total_item.setText("" if not has_any_grade else f"{total:.1f}")
+        grade = self._compute_grade(total) if has_any_grade else 0.0
         grade_item = self._table.item(row, grade_col)
         if grade_item:
-            grade_item.setText(f"{grade:g}")
-            grade_item.setForeground(self._grade_text_color(grade))
+            grade_item.setText("" if not has_any_grade else f"{grade:g}")
+            if has_any_grade:
+                grade_item.setForeground(self._grade_text_color(grade))
 
     def _on_item_changed(self, item: QTableWidgetItem):
         if self._rebuilding:
