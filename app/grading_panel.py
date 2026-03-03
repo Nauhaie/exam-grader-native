@@ -28,6 +28,10 @@ import data_store
 _HEADER_ROWS = 3        # exercise row · subquestion row · max-points row
 _FROZEN_COLS = 2        # Student, Number columns are always visible
 
+# Bounds (px) for the grading panel width computed from the table content.
+_PANEL_MIN_W = 300
+_PANEL_MAX_W = 700
+
 # Cell padding (px) for normal / compact display modes.
 # H_PAD: buffer (px) added to "0.0" text width for minimum column width.
 #         CSS horizontal padding is kept at 0; Qt's internal style margin handles visual spacing.
@@ -403,6 +407,26 @@ class GradingPanel(QWidget):
         item = self._table.item(row, col)
         if item is not None:
             self._table.editItem(item)
+
+    def preferred_width(self) -> int:
+        """Return the preferred panel width based on current table column widths.
+
+        Sums all column widths after content-based sizing, then adds frame
+        borders, vertical scrollbar width, and layout margins.  The result is
+        clamped between _PANEL_MIN_W and _PANEL_MAX_W.
+        """
+        cc = self._table.columnCount()
+        if cc == 0:
+            return _PANEL_MIN_W
+        col_total = sum(self._table.columnWidth(c) for c in range(cc))
+        if col_total == 0:
+            return _PANEL_MIN_W
+        fw = self._table.frameWidth()
+        sb_w = self._table.verticalScrollBar().sizeHint().width()
+        m = self.layout().contentsMargins()
+        panel_margin = m.left() + m.right()
+        preferred = col_total + fw * 2 + sb_w + panel_margin + 8  # 8 px extra breathing room
+        return max(_PANEL_MIN_W, min(_PANEL_MAX_W, preferred))
 
     def _filtered_students(self) -> List[Student]:
         text = self._search.text().strip().lower()
