@@ -35,6 +35,7 @@ _BG_MAX  = QColor(235, 242, 252)   # max-points row
 _BG_MISC = QColor(215, 215, 215)   # non-grade fixed columns (Student, Number, …)
 
 _HIGHLIGHT_COLOR = QColor(30, 100, 220)   # border colour for the current-student row
+_COL_HIGHLIGHT_COLOR = QColor(210, 150, 0)  # amber border for the edited column's subquestion header
 
 
 _EXERCISE_BOUNDARY_COLOR = QColor(120, 120, 120)   # darker vertical divider between exercises
@@ -53,11 +54,15 @@ class _HighlightDelegate(QStyledItemDelegate):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._highlight_row: int = -1
+        self._highlight_col: int = -1
         self._editor_opened_callback = None  # optional callback(row, col)
         self._exercise_boundary_cols: Set[int] = set()
 
     def set_highlight_row(self, row: int):
         self._highlight_row = row
+
+    def set_highlight_col(self, col: int):
+        self._highlight_col = col
 
     def set_exercise_boundaries(self, cols: Set[int]):
         """Set which column indices get a darker right-border (exercise separators)."""
@@ -80,6 +85,14 @@ class _HighlightDelegate(QStyledItemDelegate):
         opt = QStyleOptionViewItem(option)
         opt.state &= ~opt.state.__class__.State_Selected
         super().paint(painter, opt, index)
+
+        # Draw amber border on the subquestion header cell of the edited column.
+        if self._highlight_col >= 0 and index.column() == self._highlight_col and index.row() == 1:
+            painter.save()
+            painter.setPen(QPen(_COL_HIGHLIGHT_COLOR, 2))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(option.rect.adjusted(1, 1, -1, -1))
+            painter.restore()
 
         if index.row() == self._highlight_row:
             painter.save()
@@ -160,6 +173,7 @@ class GradingPanel(QWidget):
         # forwarded to a view that did not create the editor.
         self._highlight_delegate = _HighlightDelegate(self._table)
         self._highlight_delegate.set_editor_opened_callback(self._on_cell_editor_opened)
+        self._highlight_delegate.closeEditor.connect(self._on_cell_editor_closed)
         self._table.setItemDelegate(self._highlight_delegate)
 
         layout.addWidget(self._table)
@@ -817,6 +831,18 @@ class GradingPanel(QWidget):
             student = filtered[data_row]
             sq = self._subquestions[col - sq_start]
             self._last_focus[student.student_number] = sq.name
+            # Highlight the subquestion header of the column being edited.
+            self._highlight_delegate.set_highlight_col(col)
+            self._fz_header_delegate.set_highlight_col(col)
+            self._table.viewport().update()
+            self._fz_header.viewport().update()
+
+    def _on_cell_editor_closed(self, editor, hint):
+        """Called when the cell editor closes; clear the column highlight."""
+        self._highlight_delegate.set_highlight_col(-1)
+        self._fz_header_delegate.set_highlight_col(-1)
+        self._table.viewport().update()
+        self._fz_header.viewport().update()
 
     def _on_cell_clicked(self, row: int, col: int):
         # Ignore clicks on the 3 frozen header rows
@@ -865,7 +891,10 @@ class GradingPanel(QWidget):
     def _on_frozen_section_resized(self, idx, _old, new):
         for fz in (self._fz_corner, self._fz_header, self._fz_left):
             fz.setColumnWidth(idx, new)
-        self._reposition_frozen()
+        # Only reposition overlays when a frozen column changes width;
+        # non-frozen columns do not affect the overlay geometry.
+        if idx < _FROZEN_COLS:
+            self._reposition_frozen()
 
     def _update_frozen_geometry(self):
         """Set up frozen overlays: hide/show cols/rows, sync sizes, position."""
@@ -877,12 +906,15 @@ class GradingPanel(QWidget):
             return
 
         hdr = self._table.horizontalHeader()
-        # After a full rebuild the mode is ResizeToContents; measure columns once
-        # and then lock to Interactive so that incremental cell updates (e.g.
-        # changing avg values) cannot shrink columns below their initial size.
-        if cc > 0 and hdr.sectionResizeMode(0) != QHeaderView.ResizeMode.Interactive:
+        # Set a minimum section size so grading columns can never shrink
+        # narrower than a short grade value (e.g. "2.5").  ResizeToContents
+        # mode (set during _rebuild_table) handles subsequent auto-resizing.
+        fm = self._table.fontMetrics()
+        hdr.setMinimumSectionSize(fm.horizontalAdvance("2.5") + 10)
+        # Measure all columns upfront (including off-screen ones) so that the
+        # frozen overlay geometry is accurate before the user scrolls.
+        if cc > 0:
             self._table.resizeColumnsToContents()
-            hdr.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
 
         # Sync column widths and row heights to overlays
         for c in range(cc):
