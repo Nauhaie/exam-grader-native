@@ -32,10 +32,10 @@ _FROZEN_COLS = 2        # Student, Number columns are always visible
 # H_PAD: total horizontal padding (left + right) added to text width for min-column-width.
 # V_PAD: total vertical padding added to font height for the default row height.
 # The CSS strings in _apply_compact_mode must stay consistent with these values.
-_H_PAD_NORMAL  = 8   # CSS padding: 3px 4px  → 4 px/side × 2 = 8 px total
-_H_PAD_COMPACT = 4   # CSS padding: 1px 2px  → 2 px/side × 2 = 4 px total
-_V_PAD_NORMAL  = 8   # CSS padding: 3px 4px  → 3 px/side × 2 = 6 px + 2 px clearance
-_V_PAD_COMPACT = 4   # CSS padding: 1px 2px  → 1 px/side × 2 = 2 px + 2 px clearance
+_H_PAD_NORMAL  = 6   # CSS padding: 3px  → 3 px/side × 2 = 6 px total
+_H_PAD_COMPACT = 2   # CSS padding: 1px  → 1 px/side × 2 = 2 px total
+_V_PAD_NORMAL  = 8   # CSS padding: 3px  → 3 px/side × 2 = 6 px + 2 px clearance
+_V_PAD_COMPACT = 4   # CSS padding: 1px  → 1 px/side × 2 = 2 px + 2 px clearance
 
 # Header background colours
 _BG_EX   = QColor(180, 198, 230)   # exercise name row
@@ -46,6 +46,11 @@ _BG_MISC = QColor(215, 215, 215)   # non-grade fixed columns (Student, Number, �
 _HIGHLIGHT_COLOR = QColor(30, 100, 220)   # border colour for the current-student row
 _COL_ACTIVE_TINT = QColor(30, 100, 220, 70)  # semi-transparent tint for active column header
 _SQ_HEADER_ROW = 1  # row index of the subquestion name within the header rows
+
+# Grade text colours based on percentage of max grade
+_GRADE_COLOR_LOW    = QColor(180, 30, 30)    # 0–40 %: dark red
+_GRADE_COLOR_MID    = QColor(200, 130, 0)    # 40–50 %: darkish orange
+_GRADE_COLOR_HIGH   = QColor(30, 130, 30)    # > 50 %: dark green
 
 
 class _HighlightDelegate(QStyledItemDelegate):
@@ -272,12 +277,12 @@ class GradingPanel(QWidget):
         if smaller:
             font = QFont(app_font)
             font.setPointSize(max(7, app_font.pointSize() - 2))
-            item_padding = "1px 2px"
+            item_padding = "1px"
             h_pad = _H_PAD_COMPACT
             v_pad = _V_PAD_COMPACT
         else:
             font = app_font
-            item_padding = "3px 4px"
+            item_padding = "3px"
             h_pad = _H_PAD_NORMAL
             v_pad = _V_PAD_NORMAL
         self._table.setFont(font)
@@ -292,7 +297,7 @@ class GradingPanel(QWidget):
             )
         fm = QFontMetrics(font)
         self._table.horizontalHeader().setMinimumSectionSize(
-            fm.horizontalAdvance("2.5") + h_pad)
+            fm.horizontalAdvance("0.0") + h_pad)
         row_h = fm.height() + v_pad
         self._table.verticalHeader().setDefaultSectionSize(row_h)
         for r in range(self._table.rowCount()):
@@ -425,7 +430,7 @@ class GradingPanel(QWidget):
     def _grade_label(self) -> str:
         """Column header label showing the max note."""
         mn = self._grading_settings.max_note
-        return f"Grade /{mn:g}"
+        return f"Grade\n/{mn:g}"
 
     def _grade_color(self, val: float, max_pts: float) -> QColor:
         if max_pts <= 0:
@@ -442,6 +447,18 @@ class GradingPanel(QWidget):
         if val > 0:
             return QColor(200, 240, 200)
         return QColor(255, 205, 210)
+
+    def _grade_text_color(self, grade: float) -> QColor:
+        """Return text colour for a final grade based on percentage of max_note."""
+        mn = self._grading_settings.max_note
+        if mn <= 0:
+            return QColor(0, 0, 0)
+        pct = grade / mn
+        if pct <= 0.40:
+            return _GRADE_COLOR_LOW
+        if pct <= 0.50:
+            return _GRADE_COLOR_MID
+        return _GRADE_COLOR_HIGH
 
     def _rebuild_table(self):
         t0 = time.perf_counter()
@@ -497,7 +514,7 @@ class GradingPanel(QWidget):
             if bold:
                 f = it.font(); f.setBold(True); it.setFont(f)
             if text:
-                it.setToolTip(text)
+                it.setToolTip(text.replace("\n", " "))
             return it
 
         # Fixed columns (Student, Number, Bonus/malus, Total, Grade/20, extras) span all 3 header rows
@@ -579,6 +596,7 @@ class GradingPanel(QWidget):
             grade_item = QTableWidgetItem(f"{grade:g}")
             grade_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             grade_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            grade_item.setForeground(self._grade_text_color(grade))
             self._table.setItem(r, grade_col, grade_item)
 
             for ei, ename in enumerate(extra_names):
@@ -613,11 +631,13 @@ class GradingPanel(QWidget):
         bold = QFont()
         bold.setBold(True)
 
-        def _avg_item(text: str) -> QTableWidgetItem:
+        def _avg_item(text: str, tooltip: str = "") -> QTableWidgetItem:
             it = QTableWidgetItem(text)
             it.setFlags(Qt.ItemFlag.ItemIsEnabled)
             it.setFont(bold)
             it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if tooltip:
+                it.setToolTip(tooltip)
             return it
 
         self._table.setItem(avg_row, 0, _avg_item(f"Avg ({len(included)})"))
@@ -632,7 +652,8 @@ class GradingPanel(QWidget):
                 avg_val = 0.0
             avg_total += avg_val
             self._table.setItem(avg_row, sq_start + col_idx,
-                                 _avg_item(f"{avg_val:.1f}" if included else ""))
+                                 _avg_item(f"{avg_val:.1f}" if included else "",
+                                           f"{avg_val:.3f}" if included else ""))
         # Bonus/malus average
         if included:
             bm_vals = [self._grades.get(s.student_number, {}).get(BONUS_MALUS_KEY, 0.0) or 0.0
@@ -642,12 +663,15 @@ class GradingPanel(QWidget):
             bm_avg = 0.0
         avg_total += bm_avg
         self._table.setItem(avg_row, bonus_col,
-                             _avg_item(f"{bm_avg:.1f}" if included else ""))
+                             _avg_item(f"{bm_avg:.1f}" if included else "",
+                                       f"{bm_avg:.3f}" if included else ""))
         self._table.setItem(avg_row, total_col,
-                             _avg_item(f"{avg_total:.1f}" if included else ""))
+                             _avg_item(f"{avg_total:.1f}" if included else "",
+                                       f"{avg_total:.3f}" if included else ""))
         avg_grade = self._compute_grade(avg_total) if included else 0.0
         self._table.setItem(avg_row, grade_col,
-                             _avg_item(f"{avg_grade:g}" if included else ""))
+                             _avg_item(f"{avg_grade:g}" if included else "",
+                                       f"{avg_grade:.3f}" if included else ""))
         for ei in range(extra_count):
             self._table.setItem(avg_row, extra_start + ei, _avg_item(""))
 
@@ -669,12 +693,14 @@ class GradingPanel(QWidget):
         italic_bold.setBold(True)
         italic_bold.setItalic(True)
 
-        def _ex_item(text: str, bg: QColor) -> QTableWidgetItem:
+        def _ex_item(text: str, bg: QColor, tooltip: str = "") -> QTableWidgetItem:
             it = QTableWidgetItem(text)
             it.setFlags(Qt.ItemFlag.ItemIsEnabled)
             it.setFont(italic_bold)
             it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             it.setBackground(bg)
+            if tooltip:
+                it.setToolTip(tooltip)
             return it
 
         # Fixed columns
@@ -713,12 +739,14 @@ class GradingPanel(QWidget):
                 ) / len(included)
                 ex_max = sum(self._subquestions[ci2].max_points for ci2 in cols)
                 text = f"{ex_avg:.1f} / {ex_max:g}"
+                tooltip = f"{ex_avg:.3f} / {ex_max:g}"
             else:
                 text = ""
+                tooltip = ""
 
             if span > 1:
                 self._table.setSpan(ex_row, first_col, 1, span)
-            self._table.setItem(ex_row, first_col, _ex_item(text, _BG_EX))
+            self._table.setItem(ex_row, first_col, _ex_item(text, _BG_EX, tooltip))
 
     def _apply_highlight(self):
         if not self._current_student:
@@ -767,6 +795,7 @@ class GradingPanel(QWidget):
         grade_item = self._table.item(row, grade_col)
         if grade_item:
             grade_item.setText(f"{grade:g}")
+            grade_item.setForeground(self._grade_text_color(grade))
 
     def _on_item_changed(self, item: QTableWidgetItem):
         if self._rebuilding:
@@ -1021,9 +1050,10 @@ class GradingPanel(QWidget):
         frozen_w = sum(self._table.columnWidth(c) for c in range(_FROZEN_COLS))
         frozen_h = sum(self._table.rowHeight(r) for r in range(_HEADER_ROWS))
         vp = self._table.viewport()
+        fw = self._table.frameWidth()
 
-        self._fz_corner.setGeometry(0, 0, frozen_w, frozen_h)
+        self._fz_corner.setGeometry(fw, fw, frozen_w, frozen_h)
         self._fz_header.setGeometry(
-            frozen_w, 0, vp.width() - frozen_w, frozen_h)
+            fw + frozen_w, fw, vp.width() - frozen_w, frozen_h)
         self._fz_left.setGeometry(
-            0, frozen_h, frozen_w, vp.height() - frozen_h)
+            fw, fw + frozen_h, frozen_w, vp.height() - frozen_h)

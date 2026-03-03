@@ -313,6 +313,8 @@ class SettingsDialog(QDialog):
         debug_hint.setContentsMargins(20, 2, 0, 0)
         layout.addWidget(debug_hint)
 
+        layout.addStretch()
+
         return w
 
     def _build_presets_tab(self, presets: List[str]) -> QWidget:
@@ -331,6 +333,9 @@ class SettingsDialog(QDialog):
 
         self._preset_list = QListWidget()
         self._preset_list.setAlternatingRowColors(True)
+        self._preset_list.setStyleSheet(
+            "QListWidget::item { padding-left: 3px; }"
+        )
         for text in presets:
             item = QListWidgetItem(text)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)

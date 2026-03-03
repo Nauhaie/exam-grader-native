@@ -248,13 +248,13 @@ See `convert-icon.sh` for tool requirements and details.
 
 ```
 app/
-  main.py              – entry point, main window
-  pdf_viewer.py        – PDF display + annotation UI
   annotation_overlay.py – Qt drawing of annotation markers
-  pdf_exporter.py      – bake annotations into PDFs for export
-  grading_panel.py     – grade-entry spreadsheet
   data_store.py        – load/save sessions, students, grades, annotations
+  grading_panel.py     – grade-entry spreadsheet
+  main.py              – entry point, main window
   models.py            – data classes
+  pdf_exporter.py      – bake annotations into PDFs for export
+  pdf_viewer.py        – PDF display + annotation UI
   settings_dialog.py   – unified settings dialog (grading, export, scheme, presets, advanced)
   setup_dialog.py      – project-open dialog
 sample_project/        – example project (copy and fill exams/ with your PDFs)
