@@ -30,14 +30,13 @@ from PySide6.QtWidgets import (
 import data_store
 import pdf_exporter
 from grading_panel import GradingPanel
-from models import BONUS_MALUS_KEY, GradingSettings, Student, compute_grade
+from models import Annotation, BONUS_MALUS_KEY, GradingSettings, Student, compute_grade
 from pdf_viewer import PDFViewerPanel
 from settings_dialog import SettingsDialog
 from setup_dialog import SetupDialog
 from undo_redo import (
     Action,
     UndoRedoManager,
-    dict_to_annotation,
     diff_snapshots,
     snapshot_annotations,
 )
@@ -288,6 +287,8 @@ class MainWindow(QMainWindow):
 
     def _on_grade_changed(self, student_number: str, subquestion_name: str,
                           old_value, new_value):
+        if old_value == new_value:
+            return  # no actual change
         if not self._applying_undo_redo:
             action = Action(
                 id=str(uuid.uuid4()),
@@ -351,18 +352,18 @@ class MainWindow(QMainWindow):
                                    if a.id != action.annotation_id]
                 elif action.new_annotation is None:
                     # Was a delete → re-add it
-                    annotations.append(dict_to_annotation(action.old_annotation))
+                    annotations.append(Annotation.from_dict(action.old_annotation))
                 else:
                     # Was a modify → restore old state
                     for i, a in enumerate(annotations):
                         if a.id == action.annotation_id:
-                            annotations[i] = dict_to_annotation(
+                            annotations[i] = Annotation.from_dict(
                                 action.old_annotation)
                             break
             else:  # redo
                 if action.old_annotation is None:
                     # Was an add → re-add it
-                    annotations.append(dict_to_annotation(action.new_annotation))
+                    annotations.append(Annotation.from_dict(action.new_annotation))
                 elif action.new_annotation is None:
                     # Was a delete → remove it again
                     annotations = [a for a in annotations
@@ -371,7 +372,7 @@ class MainWindow(QMainWindow):
                     # Was a modify → apply new state
                     for i, a in enumerate(annotations):
                         if a.id == action.annotation_id:
-                            annotations[i] = dict_to_annotation(
+                            annotations[i] = Annotation.from_dict(
                                 action.new_annotation)
                             break
 

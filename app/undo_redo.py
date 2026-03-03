@@ -37,39 +37,9 @@ class Action:
     new_grade: Optional[float] = None       # None ⇒ cleared
 
 
-# ── Serialisation helpers ─────────────────────────────────────────────────────
-
-def annotation_to_dict(ann: Annotation) -> dict:
-    """Convert a single Annotation to a plain dict (for JSON storage)."""
-    item: dict = {"id": ann.id, "page": ann.page, "type": ann.type,
-                  "x": ann.x, "y": ann.y}
-    if ann.text is not None:
-        item["text"] = ann.text
-    if ann.x2 is not None:
-        item["x2"] = ann.x2
-    if ann.y2 is not None:
-        item["y2"] = ann.y2
-    if ann.width is not None:
-        item["width"] = ann.width
-    return item
-
-
-def dict_to_annotation(d: dict) -> Annotation:
-    """Convert a plain dict back to an Annotation object."""
-    ann_type = d["type"]
-    if ann_type == "circle":
-        ann_type = "ellipse"
-    kwargs = dict(page=d["page"], type=ann_type, x=d["x"], y=d["y"],
-                  text=d.get("text"), x2=d.get("x2"), y2=d.get("y2"),
-                  width=d.get("width"))
-    if "id" in d:
-        kwargs["id"] = d["id"]
-    return Annotation(**kwargs)
-
-
 def snapshot_annotations(annotations: List[Annotation]) -> Dict[str, dict]:
     """Build an ``{id: dict}`` snapshot for the current annotation list."""
-    return {ann.id: annotation_to_dict(ann) for ann in annotations}
+    return {ann.id: ann.to_dict() for ann in annotations}
 
 
 def diff_snapshots(

@@ -23,7 +23,7 @@ _TEXT_PAD = 3
 _RESIZE_HANDLE = 6          # side length (pt) of the resize-handle square
 _TEXT_WRAP_MAX_H = 10_000   # generous max-height for word-wrap bound calculation
 
-_RED    = QColor(204, 20, 20, 204)   # colour for lines, arrows, circles (80 % opaque)
+_RED    = QColor(204, 20, 20, 204)   # colour for lines, arrows, ellipses (80 % opaque)
 _GREEN  = QColor(0, 153, 0, 204)    # colour for checkmarks            (80 % opaque)
 _ORANGE = QColor(255, 140, 0)       # colour for tilde (~) annotation
 
