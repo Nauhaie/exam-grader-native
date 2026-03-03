@@ -79,8 +79,10 @@ class _HighlightDelegate(QStyledItemDelegate):
         self._editor_opened_callback = None  # optional callback(row, col)
         self._editor_closed_callback = None  # optional callback()
         self._tab_at_end_callback = None     # optional callback(row, col) → bool
+        self._undo_redo_passthrough_callback = None  # optional callback(is_undo: bool)
         self._current_editing_row: int = -1
         self._current_editing_col: int = -1
+        self._original_edit_text: str = ""   # cell text when the editor was opened
 
     def set_highlight_row(self, row: int):
         self._highlight_row = row
@@ -103,6 +105,12 @@ class _HighlightDelegate(QStyledItemDelegate):
         or False to let Qt handle normal Tab behaviour."""
         self._tab_at_end_callback = callback
 
+    def set_undo_redo_passthrough_callback(self, callback):
+        """Set a callback invoked with (is_undo: bool) when Ctrl+Z/Ctrl+Shift+Z
+        closes the editor but no edit was made.  This lets the app-level
+        undo/redo fire immediately instead of requiring a second keypress."""
+        self._undo_redo_passthrough_callback = callback
+
     def createEditor(self, parent, option, index):
         editor = super().createEditor(parent, option, index)
         if editor is not None:
@@ -114,6 +122,8 @@ class _HighlightDelegate(QStyledItemDelegate):
             # Intercept Ctrl+Z / Ctrl+Shift+Z so they cancel the in-progress
             # cell edit instead of triggering the QLineEdit's local text undo.
             editor.installEventFilter(self)
+            raw = index.data(Qt.ItemDataRole.DisplayRole)
+            self._original_edit_text = raw if raw is not None else ""
             self._current_editing_row = index.row()
             self._current_editing_col = index.column()
             if self._editor_opened_callback is not None:
@@ -133,11 +143,19 @@ class _HighlightDelegate(QStyledItemDelegate):
                 Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
             ):
                 # Close the editor WITHOUT committing (discard the edit).
-                # The next Ctrl+Z press (outside the editor) will trigger
-                # the app-wide undo via the menu shortcut.
+                # If the editor text was never modified, also trigger the
+                # app-level undo/redo so that each keystroke cancels exactly
+                # one non-empty action.
+                is_undo = (mods == Qt.KeyboardModifier.ControlModifier)
+                editor_text = obj.text() if isinstance(obj, QLineEdit) else None
+                no_change = (editor_text is not None
+                             and editor_text == self._original_edit_text)
                 self.closeEditor.emit(
                     obj, QStyledItemDelegate.EndEditHint.RevertModelCache,
                 )
+                if no_change and self._undo_redo_passthrough_callback is not None:
+                    cb = self._undo_redo_passthrough_callback
+                    QTimer.singleShot(0, lambda: cb(is_undo))
                 return True
             if (event.key() == Qt.Key.Key_Tab
                     and mods == Qt.KeyboardModifier.NoModifier
@@ -145,6 +163,7 @@ class _HighlightDelegate(QStyledItemDelegate):
                     and self._tab_at_end_callback(
                         self._current_editing_row, self._current_editing_col)):
                 # Commit the current value and let the callback handle navigation.
+                self.commitData.emit(obj)
                 self.closeEditor.emit(
                     obj, QStyledItemDelegate.EndEditHint.SubmitModelCache,
                 )
@@ -176,8 +195,10 @@ class _HighlightDelegate(QStyledItemDelegate):
 
 
 class GradingPanel(QWidget):
-    grade_changed   = Signal(str, str, object, object)   # student_number, sq_name, old_value, new_value
+    grade_changed    = Signal(str, str, object, object)   # student_number, sq_name, old_value, new_value
     student_selected = Signal(object)            # Student
+    undo_requested   = Signal()                  # Ctrl+Z in editor with no edit
+    redo_requested   = Signal()                  # Ctrl+Shift+Z in editor with no edit
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -240,6 +261,8 @@ class GradingPanel(QWidget):
         self._highlight_delegate.set_editor_opened_callback(self._on_cell_editor_opened)
         self._highlight_delegate.set_editor_closed_callback(self._on_cell_editor_closed)
         self._highlight_delegate.set_tab_at_end_callback(self._on_tab_in_editor)
+        self._highlight_delegate.set_undo_redo_passthrough_callback(
+            self._on_undo_redo_passthrough)
         self._table.setItemDelegate(self._highlight_delegate)
 
         layout.addWidget(self._table)
@@ -376,7 +399,7 @@ class GradingPanel(QWidget):
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
-    def _extra_field_names(self) -> List[str]:
+    def extra_field_names(self) -> List[str]:
         """Collect the union of all extra field names across all students (insertion-ordered)."""
         seen: dict = {}
         for s in self._students:
@@ -397,7 +420,7 @@ class GradingPanel(QWidget):
         base = ["Name + ID", "Name", "ID", "Annotations"]
         self._search_mode.addItems(base)
         if self._show_extra:
-            for name in self._extra_field_names():
+            for name in self.extra_field_names():
                 self._search_mode.addItem(name)
         idx = self._search_mode.findText(current)
         if idx >= 0:
@@ -620,7 +643,7 @@ class GradingPanel(QWidget):
         t0 = time.perf_counter()
         filtered = self._filtered_students()
         sq_count = len(self._subquestions)
-        extra_names = self._extra_field_names() if self._show_extra else []
+        extra_names = self.extra_field_names() if self._show_extra else []
         extra_count = len(extra_names)
         # Layout: Name | Number | subquestions… | Bonus/malus | Total | Grade/20 | [extra…]
         sq_start = 2
@@ -760,7 +783,7 @@ class GradingPanel(QWidget):
 
     def _fill_average_row(self, filtered: List[Student]):
         sq_count = len(self._subquestions)
-        extra_count = len(self._extra_field_names()) if self._show_extra else 0
+        extra_count = len(self.extra_field_names()) if self._show_extra else 0
         sq_start = 2
         bonus_col = sq_start + sq_count
         total_col = bonus_col + 1
@@ -824,7 +847,7 @@ class GradingPanel(QWidget):
                                     included: List[Student]):
         """Bottom row: one merged cell per exercise showing its average score."""
         sq_count = len(self._subquestions)
-        extra_count = len(self._extra_field_names()) if self._show_extra else 0
+        extra_count = len(self.extra_field_names()) if self._show_extra else 0
         sq_start = 2
         bonus_col = sq_start + sq_count
         total_col = bonus_col + 1
@@ -1043,6 +1066,13 @@ class GradingPanel(QWidget):
     def _on_cell_editor_closed(self):
         """Called whenever an editor is destroyed; clear the column highlight."""
         self._set_col_highlight(-1)
+
+    def _on_undo_redo_passthrough(self, is_undo: bool):
+        """Called when Ctrl+Z/Ctrl+Shift+Z closes an unmodified editor."""
+        if is_undo:
+            self.undo_requested.emit()
+        else:
+            self.redo_requested.emit()
 
     def _on_tab_in_editor(self, row: int, col: int) -> bool:
         """Called when Tab is pressed inside a cell editor.
