@@ -130,6 +130,8 @@ class MainWindow(QMainWindow):
         self._grading_panel = GradingPanel()
         self._grading_panel.grade_changed.connect(self._on_grade_changed)
         self._grading_panel.student_selected.connect(self._on_student_selected)
+        self._grading_panel.undo_requested.connect(self._undo)
+        self._grading_panel.redo_requested.connect(self._redo)
         self._splitter.addWidget(self._grading_panel)
 
         self._splitter.setSizes([900, 500])
@@ -194,7 +196,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Settings", "Open a project first.")
             return
         exam_pts = self._grading_panel.exam_max_points()
-        extra_names = self._extra_field_names()
+        extra_names = self._grading_panel.extra_field_names()
         dlg = SettingsDialog(
             self._grading_settings,
             self._grading_scheme,
@@ -330,24 +332,29 @@ class MainWindow(QMainWindow):
             self._applying_undo_redo = False
             self._update_undo_redo_state()
 
+    def _ensure_student_selected(self, student_number: str) -> bool:
+        """Switch to the student identified by *student_number* if not
+        already selected.  Returns True if the student is (now) current."""
+        is_current = (self._current_student
+                      and self._current_student.student_number == student_number)
+        if not is_current:
+            student = next(
+                (s for s in self._students if s.student_number == student_number),
+                None,
+            )
+            if student:
+                self._select_student(student)
+                return True
+            return False
+        return True
+
     def _apply_action(self, action: Action, undo: bool):
         """Apply an undo or redo action using the same code paths as a real
         user edit so that persistence, rendering and grade recomputation stay
         perfectly in sync."""
         if action.action_type == "annotation":
             sn = action.student_number
-            is_current = (self._current_student
-                          and self._current_student.student_number == sn)
-
-            # Switch to the correct student so the change is visible.
-            if not is_current:
-                student = next(
-                    (s for s in self._students if s.student_number == sn),
-                    None,
-                )
-                if student:
-                    self._select_student(student)
-                    is_current = True
+            is_current = self._ensure_student_selected(sn)
 
             if is_current:
                 annotations = list(self._pdf_viewer.get_annotations())
@@ -396,8 +403,9 @@ class MainWindow(QMainWindow):
                 self._pdf_viewer.show_page(ann_dict.get("page", 0))
 
         elif action.action_type == "grade":
-            value = action.old_grade if undo else action.new_grade
             sn = action.student_number
+            self._ensure_student_selected(sn)
+            value = action.old_grade if undo else action.new_grade
             key = action.grade_key
             if value is None:
                 if sn in self._grades:
@@ -420,24 +428,13 @@ class MainWindow(QMainWindow):
         grade = compute_grade(pts, score_total, gs.max_note, gs.rounding)
         return pts, grade
 
-    def _extra_field_names(self) -> List[str]:
-        """Return the ordered union of extra field names across all students."""
-        names: List[str] = []
-        seen: set = set()
-        for s in self._students:
-            for k in s.extra_fields:
-                if k not in seen:
-                    seen.add(k)
-                    names.append(k)
-        return names
-
     def _export_csv(self):
         if not self._grading_scheme or not self._students:
             QMessageBox.warning(self, "Export", "No project open.")
             return
         path = os.path.join(data_store.EXPORT_DIR, "grades.csv")
         subquestions = [sq for ex in self._grading_scheme.exercises for sq in ex.subquestions]
-        extra_names = self._extra_field_names()
+        extra_names = self._grading_panel.extra_field_names()
         fieldnames = (["student_number", "last_name", "first_name"]
                       + extra_names
                       + [sq.name for sq in subquestions]
@@ -476,7 +473,7 @@ class MainWindow(QMainWindow):
             return
         path = os.path.join(data_store.EXPORT_DIR, "grades.xlsx")
         subquestions = [sq for ex in self._grading_scheme.exercises for sq in ex.subquestions]
-        extra_names = self._extra_field_names()
+        extra_names = self._grading_panel.extra_field_names()
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Grades"
