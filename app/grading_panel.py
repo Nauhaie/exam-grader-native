@@ -122,8 +122,8 @@ class _HighlightDelegate(QStyledItemDelegate):
             # Intercept Ctrl+Z / Ctrl+Shift+Z so they cancel the in-progress
             # cell edit instead of triggering the QLineEdit's local text undo.
             editor.installEventFilter(self)
-            raw = index.data(Qt.ItemDataRole.DisplayRole)
-            self._original_edit_text = raw if raw is not None else ""
+            cell_value = index.data(Qt.ItemDataRole.DisplayRole)
+            self._original_edit_text = cell_value if cell_value is not None else ""
             self._current_editing_row = index.row()
             self._current_editing_col = index.column()
             if self._editor_opened_callback is not None:
