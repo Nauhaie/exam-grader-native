@@ -124,11 +124,6 @@ def draw_preview(
         painter.drawLine(x1, y1, x2, y2)
         painter.drawLine(x2, y1, x1, y2)
 
-    # Start-point dot
-    dot_r = max(2, round(4 * s))
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(_RED)
-    painter.drawEllipse(x1 - dot_r, y1 - dot_r, dot_r * 2, dot_r * 2)
     painter.end()
 
 

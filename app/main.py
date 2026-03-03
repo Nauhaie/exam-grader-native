@@ -75,8 +75,8 @@ class MainWindow(QMainWindow):
         project_menu = self.menuBar().addMenu("Project")
         settings_action = project_menu.addAction("Settings…")
         settings_action.setMenuRole(QAction.MenuRole.NoRole)
-        # Ctrl+, shows as Cmd+, on macOS and Ctrl+, on Win/Linux (standard, visible in menu)
-        settings_action.setShortcut(QKeySequence("Ctrl+,"))
+        # Ctrl+, shows as Cmd+, on macOS and Ctrl+, on Win/Linux
+        settings_action.setShortcut(QKeySequence(Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Comma))
         settings_action.triggered.connect(self._show_settings)
         project_menu.addSeparator()
         project_menu.addAction("Export Grades as CSV").triggered.connect(self._export_csv)
