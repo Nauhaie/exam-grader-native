@@ -3,7 +3,7 @@ import time
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPen
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -35,6 +35,8 @@ _BG_MAX  = QColor(235, 242, 252)   # max-points row
 _BG_MISC = QColor(215, 215, 215)   # non-grade fixed columns (Student, Number, …)
 
 _HIGHLIGHT_COLOR = QColor(30, 100, 220)   # border colour for the current-student row
+_COL_ACTIVE_TINT = QColor(30, 100, 220, 70)  # semi-transparent tint for active column header
+_SQ_HEADER_ROW = 1  # row index of the subquestion name within the header rows
 
 
 class _HighlightDelegate(QStyledItemDelegate):
@@ -42,19 +44,29 @@ class _HighlightDelegate(QStyledItemDelegate):
 
     The selection background is suppressed so the grade-based cell colours are
     always visible regardless of focus state.
+    Also tints the subquestion-name header cell of the column being edited.
     """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._highlight_row: int = -1
+        self._highlight_col: int = -1   # column whose subquestion header is tinted
         self._editor_opened_callback = None  # optional callback(row, col)
+        self._editor_closed_callback = None  # optional callback()
 
     def set_highlight_row(self, row: int):
         self._highlight_row = row
 
+    def set_highlight_col(self, col: int):
+        self._highlight_col = col
+
     def set_editor_opened_callback(self, callback):
         """Set a callback invoked with (row, col) whenever an editor is created."""
         self._editor_opened_callback = callback
+
+    def set_editor_closed_callback(self, callback):
+        """Set a callback invoked whenever an editor is destroyed."""
+        self._editor_closed_callback = callback
 
     def createEditor(self, parent, option, index):
         editor = super().createEditor(parent, option, index)
@@ -63,6 +75,11 @@ class _HighlightDelegate(QStyledItemDelegate):
             if self._editor_opened_callback is not None:
                 self._editor_opened_callback(index.row(), index.column())
         return editor
+
+    def destroyEditor(self, editor, index):
+        super().destroyEditor(editor, index)
+        if self._editor_closed_callback is not None:
+            self._editor_closed_callback()
 
     def paint(self, painter, option: QStyleOptionViewItem, index):
         # Suppress the built-in selection fill so grade colours are not overridden.
@@ -77,6 +94,14 @@ class _HighlightDelegate(QStyledItemDelegate):
             # Shrink by 1 px so the 2-px pen stays fully inside the cell
             # boundary and does not affect row height or column width.
             painter.drawRect(option.rect.adjusted(1, 1, -1, -1))
+            painter.restore()
+
+        # Tint the subquestion-name header cell for the column being edited.
+        if (self._highlight_col >= 0
+                and index.column() == self._highlight_col
+                and index.row() == _SQ_HEADER_ROW):
+            painter.save()
+            painter.fillRect(option.rect, _COL_ACTIVE_TINT)
             painter.restore()
 
 
@@ -129,6 +154,12 @@ class GradingPanel(QWidget):
         )
         hdr = self._table.horizontalHeader()
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        # Prevent grading columns from shrinking below the width of a value like
+        # "2.5".  ResizeToContents will still grow columns when needed, but will
+        # never make them narrower than this lower bound.
+        # 16 px = 8 px cell padding on each side.
+        _min_col_w = self._table.fontMetrics().horizontalAdvance("2.5") + 16
+        hdr.setMinimumSectionSize(_min_col_w)
         # The built-in single-row header is replaced by 3 data rows at the top
         hdr.setVisible(False)
         self._table.verticalHeader().setVisible(False)
@@ -141,6 +172,7 @@ class GradingPanel(QWidget):
         # forwarded to a view that did not create the editor.
         self._highlight_delegate = _HighlightDelegate(self._table)
         self._highlight_delegate.set_editor_opened_callback(self._on_cell_editor_opened)
+        self._highlight_delegate.set_editor_closed_callback(self._on_cell_editor_closed)
         self._table.setItemDelegate(self._highlight_delegate)
 
         layout.addWidget(self._table)
@@ -178,6 +210,10 @@ class GradingPanel(QWidget):
         # instance avoids Qt's "commitData" warning when _table's editor closes).
         self._fz_left_highlight_delegate = _HighlightDelegate(self._fz_left)
         self._fz_left.setItemDelegate(self._fz_left_highlight_delegate)
+        # The frozen header overlay also gets its own delegate so it can tint
+        # the subquestion-name cell of the column being edited.
+        self._fz_header_highlight_delegate = _HighlightDelegate(self._fz_header)
+        self._fz_header.setItemDelegate(self._fz_header_highlight_delegate)
 
         # Sync scrolling: main table → frozen overlays
         self._table.horizontalScrollBar().valueChanged.connect(
@@ -422,6 +458,8 @@ class GradingPanel(QWidget):
             it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             if bold:
                 f = it.font(); f.setBold(True); it.setFont(f)
+            if text:
+                it.setToolTip(text)
             return it
 
         # Fixed columns (Student, Number, Bonus/malus, Total, Grade/20, extras) span all 3 header rows
@@ -784,6 +822,20 @@ class GradingPanel(QWidget):
             student = filtered[data_row]
             sq = self._subquestions[col - sq_start]
             self._last_focus[student.student_number] = sq.name
+            self._set_col_highlight(col)
+        else:
+            self._set_col_highlight(-1)
+
+    def _on_cell_editor_closed(self):
+        """Called whenever an editor is destroyed; clear the column highlight."""
+        self._set_col_highlight(-1)
+
+    def _set_col_highlight(self, col: int):
+        """Update the active-column tint on all delegates that show header rows."""
+        for delegate in (self._highlight_delegate, self._fz_header_highlight_delegate):
+            delegate.set_highlight_col(col)
+        self._table.viewport().update()
+        self._fz_header.viewport().update()
 
     def _on_cell_clicked(self, row: int, col: int):
         # Ignore clicks on the 3 frozen header rows
