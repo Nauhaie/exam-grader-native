@@ -394,10 +394,7 @@ class MainWindow(QMainWindow):
                 self._ann_snapshot = snapshot_annotations(annotations)
 
             # Navigate to the page of the affected annotation.
-            ann_dict = (action.old_annotation if undo
-                        else action.new_annotation) or (
-                        action.new_annotation if undo
-                        else action.old_annotation)
+            ann_dict = action.old_annotation or action.new_annotation
             if ann_dict:
                 self._pdf_viewer.show_page(ann_dict.get("page", 0))
 

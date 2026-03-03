@@ -154,7 +154,7 @@ class _HighlightDelegate(QStyledItemDelegate):
 
 
 class GradingPanel(QWidget):
-    grade_changed    = Signal(str, str, object, object)   # student_number, sq_name, old_value, new_value
+    grade_changed   = Signal(str, str, object, object)   # student_number, sq_name, old_value, new_value
     student_selected = Signal(object)            # Student
 
     def __init__(self, parent=None):
