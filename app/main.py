@@ -4,7 +4,6 @@ import os
 import subprocess
 import sys
 import time
-import uuid
 from typing import List, Optional
 
 import openpyxl
@@ -271,7 +270,6 @@ class MainWindow(QMainWindow):
             if diff is not None:
                 aid, old_dict, new_dict = diff
                 action = Action(
-                    id=str(uuid.uuid4()),
                     action_type="annotation",
                     student_number=self._current_student.student_number,
                     annotation_id=aid,
@@ -292,7 +290,6 @@ class MainWindow(QMainWindow):
             return  # no actual change
         if not self._applying_undo_redo:
             action = Action(
-                id=str(uuid.uuid4()),
                 action_type="grade",
                 student_number=student_number,
                 grade_key=subquestion_name,

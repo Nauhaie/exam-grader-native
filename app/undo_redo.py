@@ -24,7 +24,6 @@ MAX_HISTORY = 100
 @dataclass
 class Action:
     """A single undoable/redoable operation."""
-    id: str
     action_type: str          # "annotation" or "grade"
     student_number: str
     # -- annotation fields (single annotation) --
@@ -70,7 +69,6 @@ def diff_snapshots(
 
 def _action_to_dict(action: Action) -> dict:
     d: dict = {
-        "id": action.id,
         "action_type": action.action_type,
         "student_number": action.student_number,
     }
@@ -87,7 +85,6 @@ def _action_to_dict(action: Action) -> dict:
 
 def _dict_to_action(d: dict) -> Action:
     return Action(
-        id=d["id"],
         action_type=d["action_type"],
         student_number=d["student_number"],
         annotation_id=d.get("annotation_id"),

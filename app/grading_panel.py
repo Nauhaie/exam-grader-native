@@ -78,6 +78,9 @@ class _HighlightDelegate(QStyledItemDelegate):
         self._highlight_col: int = -1   # column whose subquestion header is tinted
         self._editor_opened_callback = None  # optional callback(row, col)
         self._editor_closed_callback = None  # optional callback()
+        self._tab_at_end_callback = None     # optional callback(row, col) → bool
+        self._current_editing_row: int = -1
+        self._current_editing_col: int = -1
 
     def set_highlight_row(self, row: int):
         self._highlight_row = row
@@ -93,6 +96,13 @@ class _HighlightDelegate(QStyledItemDelegate):
         """Set a callback invoked whenever an editor is destroyed."""
         self._editor_closed_callback = callback
 
+    def set_tab_at_end_callback(self, callback):
+        """Set a callback invoked with (row, col) when Tab is pressed in an
+        editor.  The callback should return True if it handled the navigation
+        (in which case the Tab key event is consumed and the editor commits),
+        or False to let Qt handle normal Tab behaviour."""
+        self._tab_at_end_callback = callback
+
     def createEditor(self, parent, option, index):
         editor = super().createEditor(parent, option, index)
         if editor is not None:
@@ -104,6 +114,8 @@ class _HighlightDelegate(QStyledItemDelegate):
             # Intercept Ctrl+Z / Ctrl+Shift+Z so they cancel the in-progress
             # cell edit instead of triggering the QLineEdit's local text undo.
             editor.installEventFilter(self)
+            self._current_editing_row = index.row()
+            self._current_editing_col = index.column()
             if self._editor_opened_callback is not None:
                 self._editor_opened_callback(index.row(), index.column())
         return editor
@@ -125,6 +137,16 @@ class _HighlightDelegate(QStyledItemDelegate):
                 # the app-wide undo via the menu shortcut.
                 self.closeEditor.emit(
                     obj, QStyledItemDelegate.EndEditHint.RevertModelCache,
+                )
+                return True
+            if (event.key() == Qt.Key.Key_Tab
+                    and mods == Qt.KeyboardModifier.NoModifier
+                    and self._tab_at_end_callback is not None
+                    and self._tab_at_end_callback(
+                        self._current_editing_row, self._current_editing_col)):
+                # Commit the current value and let the callback handle navigation.
+                self.closeEditor.emit(
+                    obj, QStyledItemDelegate.EndEditHint.SubmitModelCache,
                 )
                 return True
         return super().eventFilter(obj, event)
@@ -217,6 +239,7 @@ class GradingPanel(QWidget):
         self._highlight_delegate = _HighlightDelegate(self._table)
         self._highlight_delegate.set_editor_opened_callback(self._on_cell_editor_opened)
         self._highlight_delegate.set_editor_closed_callback(self._on_cell_editor_closed)
+        self._highlight_delegate.set_tab_at_end_callback(self._on_tab_in_editor)
         self._table.setItemDelegate(self._highlight_delegate)
 
         layout.addWidget(self._table)
