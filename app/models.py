@@ -1,6 +1,11 @@
 """Data models for exam grader."""
+import uuid as _uuid
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
+
+
+def _new_id() -> str:
+    return str(_uuid.uuid4())
 
 
 @dataclass
@@ -25,6 +30,31 @@ class Annotation:
     y2: Optional[float] = None   # end point (line/arrow) or edge point (ellipse)
     width: Optional[float] = None  # text box width as fraction of page width
     # height is NOT stored; it is always computed automatically from content
+    id: str = field(default_factory=_new_id)  # unique ID for undo/redo tracking
+
+    def to_dict(self) -> dict:
+        """Serialise to a plain dict (for JSON storage)."""
+        d: dict = {"id": self.id, "page": self.page, "type": self.type,
+                   "x": self.x, "y": self.y}
+        if self.text is not None:
+            d["text"] = self.text
+        if self.x2 is not None:
+            d["x2"] = self.x2
+        if self.y2 is not None:
+            d["y2"] = self.y2
+        if self.width is not None:
+            d["width"] = self.width
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Annotation":
+        """Deserialise from a plain dict."""
+        kwargs = dict(page=d["page"], type=d["type"], x=d["x"], y=d["y"],
+                      text=d.get("text"), x2=d.get("x2"), y2=d.get("y2"),
+                      width=d.get("width"))
+        if "id" in d:
+            kwargs["id"] = d["id"]
+        return cls(**kwargs)
 
 
 @dataclass

@@ -75,7 +75,7 @@ _ERASER_CURSOR: Optional[QCursor] = None
 
 
 def _make_eraser_cursor() -> QCursor:
-    """Create (or return cached) custom eraser cursor (small circle with an 'x')."""
+    """Create (or return cached) custom eraser cursor (small ring with an 'x')."""
     global _ERASER_CURSOR
     if _ERASER_CURSOR is not None:
         return _ERASER_CURSOR
@@ -84,7 +84,7 @@ def _make_eraser_cursor() -> QCursor:
     pm.fill(QColor(0, 0, 0, 0))
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    # outer circle
+    # outer ring
     p.setPen(QPen(QColor(80, 80, 80), 2))
     p.drawEllipse(2, 2, size - 4, size - 4)
     # inner x
@@ -108,8 +108,8 @@ def _pm_logical_size(pm: Optional[QPixmap]) -> Tuple[int, int]:
 @dataclass
 class _DragState:
     kind: str        # 'point'|'line-start'|'line-end'|'line-move'|
-                     # 'circle-top'|'circle-right'|'circle-bottom'|'circle-left'|
-                     # 'circle-move'|'text-resize'
+                     # 'ellipse-top'|'ellipse-right'|'ellipse-bottom'|'ellipse-left'|
+                     # 'ellipse-move'|'text-resize'
     index: int       # index in _annotations
     start_fx: float
     start_fy: float
@@ -624,7 +624,8 @@ class PDFViewerPanel(QWidget):
             self._show_placeholder()
 
     def set_annotations(self, annotations: List[Annotation]):
-        self._annotations = annotations
+        """Replace annotations and re-render.  Does NOT emit annotations_changed."""
+        self._annotations = list(annotations)
         self._rebuild_base_and_display()
 
     def clear(self):
@@ -889,8 +890,8 @@ class PDFViewerPanel(QWidget):
         if drag is not None:
             # Handle-specific cursors (endpoints, resize handles)
             if drag.kind in ("line-start", "line-end",
-                             "circle-top", "circle-right",
-                             "circle-bottom", "circle-left",
+                             "ellipse-top", "ellipse-right",
+                             "ellipse-bottom", "ellipse-left",
                              "rectcross-tl", "rectcross-tr",
                              "rectcross-bl", "rectcross-br"):
                 self._page_label.setCursor(Qt.CursorShape.SizeAllCursor)
@@ -1081,31 +1082,31 @@ class PDFViewerPanel(QWidget):
         elif d.kind == "line-move":
             ann.x,  ann.y  = cl(d.orig_x  + dx), cl(d.orig_y  + dy)
             ann.x2, ann.y2 = cl(d.orig_x2 + dx), cl(d.orig_y2 + dy)
-        elif d.kind == "circle-top":
+        elif d.kind == "ellipse-top":
             # Move the top edge of the bounding rectangle
             if d.orig_y <= d.orig_y2:
                 ann.y = cl(d.orig_y + dy)
             else:
                 ann.y2 = cl(d.orig_y2 + dy)
-        elif d.kind == "circle-bottom":
+        elif d.kind == "ellipse-bottom":
             # Move the bottom edge of the bounding rectangle
             if d.orig_y >= d.orig_y2:
                 ann.y = cl(d.orig_y + dy)
             else:
                 ann.y2 = cl(d.orig_y2 + dy)
-        elif d.kind == "circle-right":
+        elif d.kind == "ellipse-right":
             # Move the right edge of the bounding rectangle
             if d.orig_x >= d.orig_x2:
                 ann.x = cl(d.orig_x + dx)
             else:
                 ann.x2 = cl(d.orig_x2 + dx)
-        elif d.kind == "circle-left":
+        elif d.kind == "ellipse-left":
             # Move the left edge of the bounding rectangle
             if d.orig_x <= d.orig_x2:
                 ann.x = cl(d.orig_x + dx)
             else:
                 ann.x2 = cl(d.orig_x2 + dx)
-        elif d.kind == "circle-move":
+        elif d.kind == "ellipse-move":
             ann.x,  ann.y  = cl(d.orig_x  + dx), cl(d.orig_y  + dy)
             ann.x2, ann.y2 = cl(d.orig_x2 + dx), cl(d.orig_y2 + dy)
         elif d.kind == "text-resize":
@@ -1168,24 +1169,24 @@ class PDFViewerPanel(QWidget):
                 # the ellipse from its middle.
                 if rx < tol and ry < tol:
                     if math.hypot(mx - mid_x, my - mid_y) <= tol:
-                        return _DragState("circle-move", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+                        return _DragState("ellipse-move", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
                 # Top handle
                 if math.hypot(mx - mid_x, my - top_e) <= tol:
-                    return _DragState("circle-top", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+                    return _DragState("ellipse-top", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
                 # Right handle
                 if math.hypot(mx - right, my - mid_y) <= tol:
-                    return _DragState("circle-right", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+                    return _DragState("ellipse-right", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
                 # Bottom handle
                 if math.hypot(mx - mid_x, my - bottom_e) <= tol:
-                    return _DragState("circle-bottom", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+                    return _DragState("ellipse-bottom", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
                 # Left handle
                 if math.hypot(mx - left, my - mid_y) <= tol:
-                    return _DragState("circle-left", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+                    return _DragState("ellipse-left", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
                 # Move: grab near the ellipse perimeter
                 if rx > 0 and ry > 0:
                     ndist = math.hypot((mx - mid_x) / rx, (my - mid_y) / ry)
                     if abs(ndist - 1.0) <= tol / min(rx, ry):
-                        return _DragState("circle-move", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
+                        return _DragState("ellipse-move", i, fx, fy, ann.x, ann.y, ann.x2, ann.y2)
 
             elif ann.type == "rectcross" and ann.x2 is not None:
                 # 4 corners of the rectangle

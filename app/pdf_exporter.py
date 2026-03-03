@@ -21,7 +21,7 @@ from models import Annotation, BONUS_MALUS_KEY, GradingScheme, GradingSettings, 
 
 
 # ── Colour constants ──────────────────────────────────────────────────────────
-_RED    = (0.8, 0.08, 0.08)   # lines, arrows, circles
+_RED    = (0.8, 0.08, 0.08)   # lines, arrows, ellipses
 _GREEN  = (0.0, 0.60, 0.0)    # checkmarks
 _ORANGE = (1.0, 0.55, 0.0)    # tilde (~)
 _BLACK  = (0, 0, 0)

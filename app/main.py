@@ -4,7 +4,8 @@ import os
 import subprocess
 import sys
 import time
-from typing import List
+import uuid
+from typing import List, Optional
 
 import openpyxl
 from openpyxl.utils import get_column_letter
@@ -29,10 +30,16 @@ from PySide6.QtWidgets import (
 import data_store
 import pdf_exporter
 from grading_panel import GradingPanel
-from models import BONUS_MALUS_KEY, GradingSettings, Student, compute_grade
+from models import Annotation, BONUS_MALUS_KEY, GradingSettings, Student, compute_grade
 from pdf_viewer import PDFViewerPanel
 from settings_dialog import SettingsDialog
 from setup_dialog import SetupDialog
+from undo_redo import (
+    Action,
+    UndoRedoManager,
+    diff_snapshots,
+    snapshot_annotations,
+)
 
 # Qt.KeyboardModifier.ControlModifier maps to Cmd on macOS, Ctrl on Win/Linux
 _WIN_MOD = Qt.KeyboardModifier.ControlModifier
@@ -60,6 +67,9 @@ class MainWindow(QMainWindow):
         self._grading_settings: GradingSettings = GradingSettings()
         self._preset_annotations: list = []
         self._grading_window = None  # separate window for grading panel (if enabled)
+        self._undo_manager = UndoRedoManager()
+        self._ann_snapshot: dict = {}          # {annotation_id: dict} for current student
+        self._applying_undo_redo: bool = False  # guard to skip recording during undo/redo
 
         self._setup_ui()
         self._load_session()
@@ -72,11 +82,21 @@ class MainWindow(QMainWindow):
         quit_action = file_menu.addAction("Quit")
         quit_action.triggered.connect(self.close)
 
+        edit_menu = self.menuBar().addMenu("Edit")
+        self._undo_action = edit_menu.addAction("Undo")
+        self._undo_action.setShortcut(QKeySequence("Ctrl+Z"))
+        self._undo_action.triggered.connect(self._undo)
+        self._undo_action.setEnabled(False)
+        self._redo_action = edit_menu.addAction("Redo")
+        self._redo_action.setShortcut(QKeySequence("Ctrl+Shift+Z"))
+        self._redo_action.triggered.connect(self._redo)
+        self._redo_action.setEnabled(False)
+
         project_menu = self.menuBar().addMenu("Project")
         settings_action = project_menu.addAction("Settings…")
         settings_action.setMenuRole(QAction.MenuRole.NoRole)
-        # Ctrl+, shows as Cmd+, on macOS and Ctrl+, on Win/Linux (standard, visible in menu)
-        settings_action.setShortcut(QKeySequence("Ctrl+,"))
+        # Ctrl+, shows as Cmd+, on macOS and Ctrl+, on Win/Linux
+        settings_action.setShortcut(QKeySequence(Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Comma))
         settings_action.triggered.connect(self._show_settings)
         project_menu.addSeparator()
         project_menu.addAction("Export Grades as CSV").triggered.connect(self._export_csv)
@@ -153,6 +173,10 @@ class MainWindow(QMainWindow):
         self._students = data_store.load_students(os.path.join(project_dir, "students.csv"))
         self._grades = data_store.load_grades()
         data_store.ensure_data_dirs()
+        self._undo_manager.set_journal_path(
+            os.path.join(data_store.DATA_DIR, "journal.json")
+        )
+        self._update_undo_redo_state()
         self._grading_panel.set_session(self._students, self._grading_scheme, self._grades)
         self._grading_panel.set_grading_settings(self._grading_settings)
         self._pdf_viewer.set_hi_dpr(self._grading_settings.hi_dpr)
@@ -227,6 +251,7 @@ class MainWindow(QMainWindow):
         annotations = data_store.load_annotations(student.student_number)
         data_store.dbg(f"Loading PDF: {pdf_path}")
         self._pdf_viewer.load_pdf(pdf_path, annotations)
+        self._ann_snapshot = snapshot_annotations(annotations)
         elapsed = time.perf_counter() - t0
         data_store.dbg(f"Student grading view loaded in {elapsed:.3f}s")
         self._update_window_title()
@@ -237,17 +262,139 @@ class MainWindow(QMainWindow):
         self._select_student(student)
 
     def _on_annotations_changed(self):
-        if self._current_student:
-            data_store.save_annotations(
-                self._current_student.student_number,
-                self._pdf_viewer.get_annotations(),
-            )
+        if not self._current_student:
+            return
+        current_anns = self._pdf_viewer.get_annotations()
+        new_snapshot = snapshot_annotations(current_anns)
+        if not self._applying_undo_redo:
+            diff = diff_snapshots(self._ann_snapshot, new_snapshot)
+            if diff is not None:
+                aid, old_dict, new_dict = diff
+                action = Action(
+                    id=str(uuid.uuid4()),
+                    action_type="annotation",
+                    student_number=self._current_student.student_number,
+                    annotation_id=aid,
+                    old_annotation=old_dict,
+                    new_annotation=new_dict,
+                )
+                self._undo_manager.push(action)
+                self._update_undo_redo_state()
+        self._ann_snapshot = new_snapshot
+        data_store.save_annotations(
+            self._current_student.student_number, current_anns,
+        )
 
-    def _on_grade_changed(self, student_number: str, subquestion_name: str, points: float):
-        if student_number not in self._grades:
-            self._grades[student_number] = {}
-        self._grades[student_number][subquestion_name] = points
+    def _on_grade_changed(self, student_number: str, subquestion_name: str,
+                          old_value: Optional[float],
+                          new_value: Optional[float]):
+        if old_value == new_value:
+            return  # no actual change
+        if not self._applying_undo_redo:
+            action = Action(
+                id=str(uuid.uuid4()),
+                action_type="grade",
+                student_number=student_number,
+                grade_key=subquestion_name,
+                old_grade=old_value,
+                new_grade=new_value,
+            )
+            self._undo_manager.push(action)
+            self._update_undo_redo_state()
+        # The grading panel already modified self._grades (shared dict).
+        # Just persist.
         data_store.save_grades(self._grades)
+
+    # ── Undo / Redo ───────────────────────────────────────────────────────────
+
+    def _update_undo_redo_state(self):
+        self._undo_action.setEnabled(self._undo_manager.can_undo())
+        self._redo_action.setEnabled(self._undo_manager.can_redo())
+
+    def _undo(self):
+        action = self._undo_manager.undo()
+        if action is None:
+            return
+        self._applying_undo_redo = True
+        try:
+            self._apply_action(action, undo=True)
+        finally:
+            self._applying_undo_redo = False
+            self._update_undo_redo_state()
+
+    def _redo(self):
+        action = self._undo_manager.redo()
+        if action is None:
+            return
+        self._applying_undo_redo = True
+        try:
+            self._apply_action(action, undo=False)
+        finally:
+            self._applying_undo_redo = False
+            self._update_undo_redo_state()
+
+    def _apply_action(self, action: Action, undo: bool):
+        """Apply an undo or redo action using the same code paths as a real
+        user edit so that persistence, rendering and grade recomputation stay
+        perfectly in sync."""
+        if action.action_type == "annotation":
+            sn = action.student_number
+            is_current = (self._current_student
+                          and self._current_student.student_number == sn)
+            if is_current:
+                annotations = list(self._pdf_viewer.get_annotations())
+            else:
+                annotations = data_store.load_annotations(sn)
+
+            if undo:
+                if action.old_annotation is None:
+                    # Was an add → remove it
+                    annotations = [a for a in annotations
+                                   if a.id != action.annotation_id]
+                elif action.new_annotation is None:
+                    # Was a delete → re-add it
+                    annotations.append(Annotation.from_dict(action.old_annotation))
+                else:
+                    # Was a modify → restore old state
+                    for i, a in enumerate(annotations):
+                        if a.id == action.annotation_id:
+                            annotations[i] = Annotation.from_dict(
+                                action.old_annotation)
+                            break
+            else:  # redo
+                if action.old_annotation is None:
+                    # Was an add → re-add it
+                    annotations.append(Annotation.from_dict(action.new_annotation))
+                elif action.new_annotation is None:
+                    # Was a delete → remove it again
+                    annotations = [a for a in annotations
+                                   if a.id != action.annotation_id]
+                else:
+                    # Was a modify → apply new state
+                    for i, a in enumerate(annotations):
+                        if a.id == action.annotation_id:
+                            annotations[i] = Annotation.from_dict(
+                                action.new_annotation)
+                            break
+
+            data_store.save_annotations(sn, annotations)
+            if is_current:
+                self._pdf_viewer.set_annotations(annotations)
+                self._ann_snapshot = snapshot_annotations(annotations)
+
+        elif action.action_type == "grade":
+            value = action.old_grade if undo else action.new_grade
+            sn = action.student_number
+            key = action.grade_key
+            if value is None:
+                if sn in self._grades:
+                    self._grades[sn].pop(key, None)
+            else:
+                if sn not in self._grades:
+                    self._grades[sn] = {}
+                self._grades[sn][key] = value
+            data_store.save_grades(self._grades)
+            self._grading_panel.refresh_student_row(sn)
 
     def _compute_student_grade(self, sg: dict, subquestions) -> tuple:
         """Return (total_points, final_grade) for a student's scores dict."""

@@ -399,23 +399,7 @@ def load_annotations(student_number: str) -> List[Annotation]:
         return []
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    annotations = []
-    for item in data:
-        ann_type = item["type"]
-        # Migrate legacy "circle" → "ellipse"
-        if ann_type == "circle":
-            ann_type = "ellipse"
-        annotations.append(Annotation(
-            page=item["page"],
-            type=ann_type,
-            x=item["x"],
-            y=item["y"],
-            text=item.get("text"),
-            x2=item.get("x2"),
-            y2=item.get("y2"),
-            width=item.get("width"),
-            # height is intentionally not loaded; it is always computed from content
-        ))
+    annotations = [Annotation.from_dict(item) for item in data]
     dbg(f"  Loaded {len(annotations)} annotation(s)")
     return annotations
 
@@ -424,18 +408,6 @@ def save_annotations(student_number: str, annotations: List[Annotation]):
     _require_project_dir("save_annotations")
     ensure_data_dirs()
     path = os.path.join(ANNOTATIONS_DIR, f"{student_number}.json")
-    data = []
-    for ann in annotations:
-        item = {"page": ann.page, "type": ann.type, "x": ann.x, "y": ann.y}
-        if ann.text is not None:
-            item["text"] = ann.text
-        if ann.x2 is not None:
-            item["x2"] = ann.x2
-        if ann.y2 is not None:
-            item["y2"] = ann.y2
-        if ann.width is not None:
-            item["width"] = ann.width
-        # height is intentionally NOT saved; it is always computed from content
-        data.append(item)
+    data = [ann.to_dict() for ann in annotations]
     _atomic_json_write(path, data)
     dbg(f"Annotations saved for student {student_number}: {len(annotations)} annotation(s)")

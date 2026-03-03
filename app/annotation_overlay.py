@@ -23,7 +23,7 @@ _TEXT_PAD = 3
 _RESIZE_HANDLE = 6          # side length (pt) of the resize-handle square
 _TEXT_WRAP_MAX_H = 10_000   # generous max-height for word-wrap bound calculation
 
-_RED    = QColor(204, 20, 20, 204)   # colour for lines, arrows, circles (80 % opaque)
+_RED    = QColor(204, 20, 20, 204)   # colour for lines, arrows, ellipses (80 % opaque)
 _GREEN  = QColor(0, 153, 0, 204)    # colour for checkmarks            (80 % opaque)
 _ORANGE = QColor(255, 140, 0)       # colour for tilde (~) annotation
 
@@ -124,11 +124,6 @@ def draw_preview(
         painter.drawLine(x1, y1, x2, y2)
         painter.drawLine(x2, y1, x1, y2)
 
-    # Start-point dot
-    dot_r = max(2, round(4 * s))
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(_RED)
-    painter.drawEllipse(x1 - dot_r, y1 - dot_r, dot_r * 2, dot_r * 2)
     painter.end()
 
 

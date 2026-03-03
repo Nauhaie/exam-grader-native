@@ -376,6 +376,11 @@ class SettingsDialog(QDialog):
             if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
                 self._on_delete_preset()
                 return True
+        if (obj is self._tree and event.type() == QEvent.Type.KeyPress
+                and self._tree.state() != QTreeWidget.State.EditingState):
+            if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+                self._on_delete()
+                return True
         return super().eventFilter(obj, event)
 
     def _on_add_preset(self):
@@ -471,6 +476,7 @@ class SettingsDialog(QDialog):
         self._scheme_change_timer.setInterval(200)
         self._scheme_change_timer.timeout.connect(self._on_scheme_changed)
         self._tree.itemChanged.connect(self._scheme_change_timer.start)
+        self._tree.installEventFilter(self)
 
         return w
 
