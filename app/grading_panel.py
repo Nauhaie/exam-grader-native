@@ -258,7 +258,33 @@ class GradingPanel(QWidget):
         if settings.show_extra_fields != self._show_extra:
             self._show_extra = settings.show_extra_fields
             self._update_search_modes()
+        self._apply_compact_mode(settings.smaller_font)
         self._rebuild_table()
+
+    def _apply_compact_mode(self, smaller: bool):
+        """Apply smaller font + reduced cell padding via CSS, or restore defaults."""
+        app_font = QApplication.font()
+        if smaller:
+            font = QFont(app_font)
+            font.setPointSize(max(7, app_font.pointSize() - 2))
+            item_padding = "1px 2px"
+        else:
+            font = app_font
+            item_padding = "3px 4px"
+        self._table.setFont(font)
+        self._table.setStyleSheet(
+            f"QTableWidget::item {{ padding: {item_padding}; }}"
+        )
+        for fz in (self._fz_corner, self._fz_header, self._fz_left):
+            fz.setFont(font)
+            fz.setStyleSheet(
+                f"QTableView {{ border: none; }} "
+                f"QTableView::item {{ padding: {item_padding}; }}"
+            )
+        fm = QFontMetrics(font)
+        pad_px = 8 if smaller else 16
+        _min_col_w = fm.horizontalAdvance("2.5") + pad_px
+        self._table.horizontalHeader().setMinimumSectionSize(_min_col_w)
 
     def exam_max_points(self) -> float:
         """Return the sum of all subquestion max points."""

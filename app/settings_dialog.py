@@ -9,7 +9,7 @@ Combines:
 """
 from typing import List, Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -64,9 +64,9 @@ class SettingsDialog(QDialog):
         layout.addWidget(self._tabs)
 
         self._tabs.addTab(self._build_grading_tab(grading_settings), "Grading")
-        self._tabs.addTab(self._build_export_tab(grading_settings, export_template), "Export")
         self._tabs.addTab(self._build_scheme_tab(grading_scheme), "Grading Scheme")
         self._tabs.addTab(self._build_presets_tab(preset_annotations or []), "Preset Annotations")
+        self._tabs.addTab(self._build_export_tab(grading_settings, export_template), "Export")
         self._tabs.addTab(self._build_advanced_tab(grading_settings), "Advanced")
 
         buttons = QDialogButtonBox(
@@ -145,6 +145,25 @@ class SettingsDialog(QDialog):
         )
         self._score_total_spin.setEnabled(settings.score_total is not None)
         form.addRow("", self._score_total_spin)
+
+        layout.addSpacing(8)
+
+        self._smaller_font_cb = QCheckBox("Smaller font size in grading table")
+        self._smaller_font_cb.setChecked(settings.smaller_font)
+        self._smaller_font_cb.setToolTip(
+            "When enabled, the grading table uses a smaller font and reduced cell\n"
+            "padding to display more information in less space."
+        )
+        layout.addWidget(self._smaller_font_cb)
+
+        smaller_font_hint = QLabel(
+            "Reduces the font size and cell padding in the grading spreadsheet, "
+            "making the table more compact so more columns are visible at once."
+        )
+        smaller_font_hint.setWordWrap(True)
+        smaller_font_hint.setStyleSheet("color: #555;")
+        smaller_font_hint.setContentsMargins(20, 2, 0, 0)
+        layout.addWidget(smaller_font_hint)
 
         layout.addSpacing(8)
 
@@ -436,12 +455,42 @@ class SettingsDialog(QDialog):
         down_btn.clicked.connect(self._on_move_down)
         btn_row.addWidget(down_btn)
 
-        return w
+        # Debounce itemChanged so we don't recompute on every keystroke during editing
+        self._scheme_change_timer = QTimer(self)
+        self._scheme_change_timer.setSingleShot(True)
+        self._scheme_change_timer.setInterval(200)
+        self._scheme_change_timer.timeout.connect(self._on_scheme_changed)
+        self._tree.itemChanged.connect(self._scheme_change_timer.start)
 
-    # ── Grading tab helpers ───────────────────────────────────────────────────
+        return w
 
     def _on_auto_toggled(self, checked: bool):
         self._score_total_spin.setEnabled(not checked)
+        self._update_preview()
+
+    def _exam_max_points_from_tree(self) -> float:
+        """Compute the current exam total from the scheme tree widget.
+
+        Uses 1.0 as fallback for unparseable max-points cells, consistent with
+        the behaviour of get_grading_scheme() which applies the same fallback.
+        """
+        total = 0.0
+        for i in range(self._tree.topLevelItemCount()):
+            ex_item = self._tree.topLevelItem(i)
+            for j in range(ex_item.childCount()):
+                try:
+                    total += float(ex_item.child(j).text(1))
+                except ValueError:
+                    total += 1.0
+        return total
+
+    def _on_scheme_changed(self):
+        """Refresh the grading-tab total whenever the scheme tree changes."""
+        new_total = self._exam_max_points_from_tree()
+        self._exam_max_points = new_total
+        self._auto_cb.setText(
+            f"Automatic (use exam total = {new_total:g} pts)"
+        )
         self._update_preview()
 
     def _update_preview(self):
@@ -461,10 +510,8 @@ class SettingsDialog(QDialog):
         full = fmt(self._exam_max_points)
         half = fmt(self._exam_max_points / 2)
         self._preview.setText(
-            f"Example — full score: {self._exam_max_points:g} pts scored"
-            f" → grade <b>{full}</b> / {mn:g}"
-            f"  ·  half score: {self._exam_max_points / 2:g} pts scored"
-            f" → grade <b>{half}</b> / {mn:g}"
+            f"Full score: {self._exam_max_points:g} pts → grade <b>{full}</b> / {mn:g}<br>"
+            f"Half score: {self._exam_max_points / 2:g} pts → grade <b>{half}</b> / {mn:g}"
         )
 
     # ── Scheme tab helpers ────────────────────────────────────────────────────
@@ -520,6 +567,7 @@ class SettingsDialog(QDialog):
         ex.setExpanded(True)
         self._tree.setCurrentItem(item)
         self._tree.editItem(item, 0)
+        self._on_scheme_changed()
 
     def _on_delete(self):
         item = self._tree.currentItem()
@@ -539,6 +587,7 @@ class SettingsDialog(QDialog):
             self._tree.takeTopLevelItem(idx)
         else:
             item.parent().removeChild(item)
+        self._on_scheme_changed()
 
     def _on_move_up(self):
         item = self._tree.currentItem()
@@ -591,6 +640,7 @@ class SettingsDialog(QDialog):
             hi_dpr=self._hi_dpr_cb.isChecked(),
             grading_separate_window=self._separate_window_cb.isChecked(),
             show_extra_fields=self._show_extra_cb.isChecked(),
+            smaller_font=self._smaller_font_cb.isChecked(),
         )
 
     def get_export_template(self) -> str:

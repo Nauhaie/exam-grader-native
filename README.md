@@ -138,11 +138,20 @@ Open via **Project → Settings…**.  The dialog has five tabs:
 
 | Tab | Contents |
 |-----|----------|
-| **Grading** | Max note, rounding step, score total (auto or manual) |
-| **Export** | Filename template for annotated PDFs, cover page detail level |
+| **Grading** | Max note, rounding step, score total (auto or manual), smaller font size |
 | **Grading Scheme** | Exercise / subquestion editor (names & max points) |
 | **Preset Annotations** | Manage the text presets used by the Stamp tool (S) |
+| **Export** | Filename template for annotated PDFs, cover page detail level |
 | **Advanced** | High-DPI rendering, grading sheet in separate window, show extra fields, debug mode |
+
+### Smaller font size in grading table
+
+Enable **"Smaller font size in grading table"** in the **Grading** tab to reduce the
+font size and cell padding in the grading spreadsheet via CSS.  This makes the table
+more compact so that more columns (exercises/subquestions) are visible without
+horizontal scrolling.  Disable the option to return to the default appearance.
+
+---
 
 ### Grading sheet in separate window
 
