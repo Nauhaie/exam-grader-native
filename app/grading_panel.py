@@ -1044,6 +1044,39 @@ class GradingPanel(QWidget):
         """Called whenever an editor is destroyed; clear the column highlight."""
         self._set_col_highlight(-1)
 
+    def _on_tab_in_editor(self, row: int, col: int) -> bool:
+        """Called when Tab is pressed inside a cell editor.
+
+        Returns True (consuming the key and committing the edit) when Tab is
+        pressed in the last editable column of a student row, then defers
+        moving focus to the first grading cell of the next student.
+        Returns False for all other cells so Qt performs its default Tab
+        behaviour (advance to the next cell in the same row).
+        """
+        if row < _HEADER_ROWS or not self._subquestions:
+            return False
+        sq_start = 2
+        bonus_col = sq_start + len(self._subquestions)
+        if col != bonus_col:
+            return False
+        data_row = row - _HEADER_ROWS
+        filtered = self._filtered_students()
+        next_data_row = data_row + 1
+        if next_data_row >= len(filtered):
+            return False
+        next_student = filtered[next_data_row]
+        next_row = _HEADER_ROWS + next_data_row
+        def _navigate_to_next_student():
+            self._table.setCurrentCell(next_row, sq_start)
+            item = self._table.item(next_row, sq_start)
+            if item is not None:
+                self._table.scrollToItem(
+                    item, QAbstractItemView.ScrollHint.EnsureVisible)
+                self._table.editItem(item)
+            self.student_selected.emit(next_student)
+        QTimer.singleShot(0, _navigate_to_next_student)
+        return True
+
     def _set_col_highlight(self, col: int):
         """Update the active-column tint on all delegates that show header rows."""
         for delegate in (self._highlight_delegate, self._fz_header_highlight_delegate):
