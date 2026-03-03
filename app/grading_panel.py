@@ -29,14 +29,13 @@ _HEADER_ROWS = 3        # exercise row · subquestion row · max-points row
 _FROZEN_COLS = 2        # Student, Number columns are always visible
 
 # Cell padding (px) for normal / compact display modes.
-# H_PAD is the total horizontal padding (left + right) used for min-column-width.
-# V_PAD is the total vertical padding (top + bottom) added on top of the font
-# height to derive the default row height.
-# These values must stay consistent with the CSS strings in _apply_compact_mode.
-_H_PAD_NORMAL  = 8   # CSS: padding: 3px 4px  → 4 px left + 4 px right
-_H_PAD_COMPACT = 4   # CSS: padding: 1px 2px  → 2 px left + 2 px right
-_V_PAD_NORMAL  = 8   # CSS: padding: 3px 4px  → 3 px top + 3 px bottom + 2 px for borders
-_V_PAD_COMPACT = 4   # CSS: padding: 1px 2px  → 1 px top + 1 px bottom + 2 px for borders
+# H_PAD: total horizontal padding (left + right) added to text width for min-column-width.
+# V_PAD: total vertical padding added to font height for the default row height.
+# The CSS strings in _apply_compact_mode must stay consistent with these values.
+_H_PAD_NORMAL  = 8   # CSS padding: 3px 4px  → 4 px/side × 2 = 8 px total
+_H_PAD_COMPACT = 4   # CSS padding: 1px 2px  → 2 px/side × 2 = 4 px total
+_V_PAD_NORMAL  = 8   # CSS padding: 3px 4px  → 3 px/side × 2 = 6 px + 2 px clearance
+_V_PAD_COMPACT = 4   # CSS padding: 1px 2px  → 1 px/side × 2 = 2 px + 2 px clearance
 
 # Header background colours
 _BG_EX   = QColor(180, 198, 230)   # exercise name row
@@ -264,11 +263,11 @@ class GradingPanel(QWidget):
         if settings.show_extra_fields != self._show_extra:
             self._show_extra = settings.show_extra_fields
             self._update_search_modes()
-        self._apply_compact_mode(settings.smaller_font)
+        self._apply_compact_mode(settings.compact_table)
         self._rebuild_table()
 
     def _apply_compact_mode(self, smaller: bool):
-        """Apply smaller font + reduced cell padding via CSS, or restore defaults."""
+        """Apply compact display (smaller font + reduced cell padding) via CSS, or restore defaults."""
         app_font = QApplication.font()
         if smaller:
             font = QFont(app_font)

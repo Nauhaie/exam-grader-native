@@ -37,7 +37,7 @@ class GradingSettings:
     hi_dpr: bool = False            # use high DPI rendering (Retina); disable for speed
     grading_separate_window: bool = False  # show grading sheet in a separate window
     show_extra_fields: bool = False  # show extra CSV columns in the grading panel
-    smaller_font: bool = False       # use smaller font + reduced cell padding in the grading table
+    compact_table: bool = False      # use compact display (smaller font + reduced cell padding) in the grading table
 
 
 @dataclass
