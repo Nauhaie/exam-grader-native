@@ -49,6 +49,7 @@ _BG_MISC = QColor(215, 215, 215)   # non-grade fixed columns (Student, Number, â
 _HIGHLIGHT_COLOR = QColor(30, 100, 220)   # border colour for the current-student row
 _COL_ACTIVE_TINT = QColor(30, 100, 220, 70)  # semi-transparent tint for active column header
 _SQ_HEADER_ROW = 1  # row index of the subquestion name within the header rows
+_MAX_PTS_HEADER_ROW = 2  # row index of the max-points within the header rows
 
 # Grade text colours based on percentage of max grade
 _GRADE_COLOR_LOW    = QColor(180, 30, 30)    # < 40 %: dark red
@@ -120,10 +121,10 @@ class _HighlightDelegate(QStyledItemDelegate):
             painter.drawRect(option.rect.adjusted(1, 1, -1, -1))
             painter.restore()
 
-        # Tint the subquestion-name header cell for the column being edited.
+        # Tint the subquestion-name and max-points header cells for the column being edited.
         if (self._highlight_col >= 0
                 and index.column() == self._highlight_col
-                and index.row() == _SQ_HEADER_ROW):
+                and index.row() in (_SQ_HEADER_ROW, _MAX_PTS_HEADER_ROW)):
             painter.save()
             painter.fillRect(option.rect, _COL_ACTIVE_TINT)
             painter.restore()
@@ -459,6 +460,11 @@ class GradingPanel(QWidget):
         mn = self._grading_settings.max_note
         return f"Grade\n/{mn:g}"
 
+    def _total_label(self) -> str:
+        """Column header label showing the max total score."""
+        mt = self._max_total()
+        return f"Tot.\n/{mt:g}"
+
     def _grade_color(self, val: float, max_pts: float) -> QColor:
         if max_pts <= 0:
             return QColor(255, 255, 255)
@@ -546,7 +552,7 @@ class GradingPanel(QWidget):
 
         # Fixed columns (Student, Number, Total, Grade/20, extras) span all 3 header rows
         fixed_cols = [0, 1, total_col, grade_col] + list(range(extra_start, extra_start + extra_count))
-        fixed_labels = ["Student", "Number", "Total", self._grade_label()] + extra_names
+        fixed_labels = ["Student", "Number", self._total_label(), self._grade_label()] + extra_names
         for c, label in zip(fixed_cols, fixed_labels):
             self._table.setSpan(0, c, _HEADER_ROWS, 1)
             self._table.setItem(0, c, _hdr(label, _BG_MISC, bold=True))

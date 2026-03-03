@@ -9,7 +9,7 @@ Combines:
 """
 from typing import List, Optional
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -333,9 +333,7 @@ class SettingsDialog(QDialog):
 
         self._preset_list = QListWidget()
         self._preset_list.setAlternatingRowColors(True)
-        self._preset_list.setStyleSheet(
-            "QListWidget::item { padding-left: 3px; }"
-        )
+        self._preset_list.installEventFilter(self)
         for text in presets:
             item = QListWidgetItem(text)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
@@ -372,6 +370,13 @@ class SettingsDialog(QDialog):
         return w
 
     # ── Preset tab helpers ────────────────────────────────────────────────────
+
+    def eventFilter(self, obj, event):
+        if obj is self._preset_list and event.type() == QEvent.Type.KeyPress:
+            if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+                self._on_delete_preset()
+                return True
+        return super().eventFilter(obj, event)
 
     def _on_add_preset(self):
         item = QListWidgetItem("New preset")
