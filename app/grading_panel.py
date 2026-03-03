@@ -3,7 +3,7 @@ import time
 from typing import Dict, List, Optional, Set
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPen
+from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -35,7 +35,7 @@ _BG_MAX  = QColor(235, 242, 252)   # max-points row
 _BG_MISC = QColor(215, 215, 215)   # non-grade fixed columns (Student, Number, …)
 
 _HIGHLIGHT_COLOR = QColor(30, 100, 220)   # border colour for the current-student row
-
+_COLUMN_HIGHLIGHT_COLOR = QColor(30, 100, 220, 40)  # faint blue tint for the active grade column
 
 _EXERCISE_BOUNDARY_COLOR = QColor(120, 120, 120)   # darker vertical divider between exercises
 
@@ -53,11 +53,15 @@ class _HighlightDelegate(QStyledItemDelegate):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._highlight_row: int = -1
+        self._highlight_col: int = -1
         self._editor_opened_callback = None  # optional callback(row, col)
         self._exercise_boundary_cols: Set[int] = set()
 
     def set_highlight_row(self, row: int):
         self._highlight_row = row
+
+    def set_highlight_col(self, col: int):
+        self._highlight_col = col
 
     def set_exercise_boundaries(self, cols: Set[int]):
         """Set which column indices get a darker right-border (exercise separators)."""
@@ -80,6 +84,13 @@ class _HighlightDelegate(QStyledItemDelegate):
         opt = QStyleOptionViewItem(option)
         opt.state &= ~opt.state.__class__.State_Selected
         super().paint(painter, opt, index)
+
+        # Draw a faint tint over the active grading column.
+        if index.column() == self._highlight_col:
+            painter.save()
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            painter.fillRect(option.rect, _COLUMN_HIGHLIGHT_COLOR)
+            painter.restore()
 
         if index.row() == self._highlight_row:
             painter.save()
@@ -148,11 +159,15 @@ class GradingPanel(QWidget):
         )
         hdr = self._table.horizontalHeader()
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        # Prevent grading columns from shrinking below the width of "2.5"
+        fm = self._table.fontMetrics()
+        hdr.setMinimumSectionSize(fm.horizontalAdvance("2.5") + 10)
         # The built-in single-row header is replaced by 3 data rows at the top
         hdr.setVisible(False)
         self._table.verticalHeader().setVisible(False)
         self._table.itemChanged.connect(self._on_item_changed)
         self._table.cellClicked.connect(self._on_cell_clicked)
+        self._table.currentCellChanged.connect(self._on_current_cell_changed)
 
         # Delegate draws a border around the current student's row instead of
         # changing background colours (which would override grade colouring).
@@ -817,6 +832,23 @@ class GradingPanel(QWidget):
             student = filtered[data_row]
             sq = self._subquestions[col - sq_start]
             self._last_focus[student.student_number] = sq.name
+
+    def _on_current_cell_changed(self, new_row: int, new_col: int,
+                                  _old_row: int, _old_col: int):
+        """Highlight the active grading column in both the table and the frozen header."""
+        if not self._subquestions:
+            col = -1
+        else:
+            sq_start = 2
+            sq_end = sq_start + len(self._subquestions)
+            if sq_start <= new_col < sq_end and new_row >= _HEADER_ROWS:
+                col = new_col
+            else:
+                col = -1
+        self._highlight_delegate.set_highlight_col(col)
+        self._fz_header_delegate.set_highlight_col(col)
+        self._table.viewport().update()
+        self._fz_header.viewport().update()
 
     def _on_cell_clicked(self, row: int, col: int):
         # Ignore clicks on the 3 frozen header rows
