@@ -5,7 +5,7 @@ import subprocess
 import sys
 import time
 import uuid
-from typing import List
+from typing import List, Optional
 
 import openpyxl
 from openpyxl.utils import get_column_letter
@@ -286,7 +286,8 @@ class MainWindow(QMainWindow):
         )
 
     def _on_grade_changed(self, student_number: str, subquestion_name: str,
-                          old_value, new_value):
+                          old_value: Optional[float],
+                          new_value: Optional[float]):
         if old_value == new_value:
             return  # no actual change
         if not self._applying_undo_redo:
