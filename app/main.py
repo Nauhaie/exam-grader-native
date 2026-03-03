@@ -99,7 +99,7 @@ class MainWindow(QMainWindow):
         self._pdf_viewer.student_prev_requested.connect(self._select_prev_student)
         self._pdf_viewer.student_next_requested.connect(self._select_next_student)
         self._pdf_viewer.open_settings_presets_requested.connect(
-            lambda: self._show_settings(initial_tab=3)
+            lambda: self._show_settings(initial_tab=2)
         )
         self._splitter.addWidget(self._pdf_viewer)
 

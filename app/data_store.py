@@ -160,6 +160,7 @@ def _default_config() -> dict:
             "hi_dpr": False,
             "grading_separate_window": False,
             "show_extra_fields": False,
+            "smaller_font": False,
         },
         "preset_annotations": [
             "Justification...",
@@ -280,6 +281,7 @@ def load_grading_settings_from_config(config_data: dict) -> GradingSettings:
         hi_dpr=bool(gs.get("hi_dpr", False)),
         grading_separate_window=bool(gs.get("grading_separate_window", False)),
         show_extra_fields=bool(gs.get("show_extra_fields", False)),
+        smaller_font=bool(gs.get("smaller_font", False)),
     )
     set_debug(settings.debug_mode)
     dbg(f"Grading settings loaded: max_note={settings.max_note}, "
@@ -299,6 +301,7 @@ def save_grading_settings_to_config(config_data: dict, settings: GradingSettings
         "hi_dpr": settings.hi_dpr,
         "grading_separate_window": settings.grading_separate_window,
         "show_extra_fields": settings.show_extra_fields,
+        "smaller_font": settings.smaller_font,
     }
 
 
