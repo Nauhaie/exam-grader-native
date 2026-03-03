@@ -1047,18 +1047,28 @@ class GradingPanel(QWidget):
     def _on_tab_in_editor(self, row: int, col: int) -> bool:
         """Called when Tab is pressed inside a cell editor.
 
-        Returns True (consuming the key and committing the edit) when Tab is
-        pressed in the last editable column of a student row, then defers
-        moving focus to the first grading cell of the next student.
-        Returns False for all other cells so Qt performs its default Tab
-        behaviour (advance to the next cell in the same row).
+        Handles Tab navigation for all grading cells (subquestion columns and
+        the bonus/malus column):
+        - Within a row: advances to the next grading cell and opens its editor.
+        - At the bonus/malus cell (last grading column): moves to the first
+          grading cell of the next student row and opens its editor.
+
+        Returns True to consume the Tab key and handle navigation, or False
+        to let Qt perform default Tab behaviour (non-grading cells).
         """
         if row < _HEADER_ROWS or not self._subquestions:
             return False
         sq_start = 2
         bonus_col = sq_start + len(self._subquestions)
-        if col != bonus_col:
-            return False
+        if col < sq_start or col > bonus_col:
+            return False  # not a grading cell
+
+        if col < bonus_col:
+            # Advance to the next grading cell within the same row.
+            QTimer.singleShot(0, lambda: self._go_to_cell(row, col + 1))
+            return True
+
+        # At bonus_col: move to the first grading cell of the next student.
         data_row = row - _HEADER_ROWS
         filtered = self._filtered_students()
         next_data_row = data_row + 1
@@ -1067,15 +1077,18 @@ class GradingPanel(QWidget):
         next_student = filtered[next_data_row]
         next_row = _HEADER_ROWS + next_data_row
         def _navigate_to_next_student():
-            self._table.setCurrentCell(next_row, sq_start)
-            item = self._table.item(next_row, sq_start)
-            if item is not None:
-                self._table.scrollToItem(
-                    item, QAbstractItemView.ScrollHint.EnsureVisible)
-                self._table.editItem(item)
+            self._go_to_cell(next_row, sq_start)
             self.student_selected.emit(next_student)
         QTimer.singleShot(0, _navigate_to_next_student)
         return True
+
+    def _go_to_cell(self, row: int, col: int):
+        """Select the cell at (row, col), scroll it into view, and open its editor."""
+        self._table.setCurrentCell(row, col)
+        item = self._table.item(row, col)
+        if item is not None:
+            self._table.scrollToItem(item, QAbstractItemView.ScrollHint.EnsureVisible)
+            self._table.editItem(item)
 
     def _set_col_highlight(self, col: int):
         """Update the active-column tint on all delegates that show header rows."""
