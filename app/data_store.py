@@ -405,7 +405,7 @@ def load_annotations(student_number: str) -> List[Annotation]:
         # Migrate legacy "circle" → "ellipse"
         if ann_type == "circle":
             ann_type = "ellipse"
-        annotations.append(Annotation(
+        ann_kwargs = dict(
             page=item["page"],
             type=ann_type,
             x=item["x"],
@@ -415,7 +415,10 @@ def load_annotations(student_number: str) -> List[Annotation]:
             y2=item.get("y2"),
             width=item.get("width"),
             # height is intentionally not loaded; it is always computed from content
-        ))
+        )
+        if "id" in item:
+            ann_kwargs["id"] = item["id"]
+        annotations.append(Annotation(**ann_kwargs))
     dbg(f"  Loaded {len(annotations)} annotation(s)")
     return annotations
 
@@ -426,7 +429,7 @@ def save_annotations(student_number: str, annotations: List[Annotation]):
     path = os.path.join(ANNOTATIONS_DIR, f"{student_number}.json")
     data = []
     for ann in annotations:
-        item = {"page": ann.page, "type": ann.type, "x": ann.x, "y": ann.y}
+        item = {"id": ann.id, "page": ann.page, "type": ann.type, "x": ann.x, "y": ann.y}
         if ann.text is not None:
             item["text"] = ann.text
         if ann.x2 is not None:

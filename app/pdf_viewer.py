@@ -624,7 +624,8 @@ class PDFViewerPanel(QWidget):
             self._show_placeholder()
 
     def set_annotations(self, annotations: List[Annotation]):
-        self._annotations = annotations
+        """Replace annotations and re-render.  Does NOT emit annotations_changed."""
+        self._annotations = list(annotations)
         self._rebuild_base_and_display()
 
     def clear(self):

@@ -1,6 +1,11 @@
 """Data models for exam grader."""
+import uuid as _uuid
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
+
+
+def _new_id() -> str:
+    return str(_uuid.uuid4())
 
 
 @dataclass
@@ -25,6 +30,7 @@ class Annotation:
     y2: Optional[float] = None   # end point (line/arrow) or edge point (ellipse)
     width: Optional[float] = None  # text box width as fraction of page width
     # height is NOT stored; it is always computed automatically from content
+    id: str = field(default_factory=_new_id)  # unique ID for undo/redo tracking
 
 
 @dataclass

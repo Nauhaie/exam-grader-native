@@ -135,7 +135,7 @@ class _HighlightDelegate(QStyledItemDelegate):
 
 
 class GradingPanel(QWidget):
-    grade_changed   = Signal(str, str, float)   # student_number, sq_name, points
+    grade_changed   = Signal(str, str, object, object)   # student_number, sq_name, old_value, new_value
     student_selected = Signal(object)            # Student
 
     def __init__(self, parent=None):
@@ -897,8 +897,9 @@ class GradingPanel(QWidget):
 
         if text == "":
             sg = self._grades.get(student.student_number, {})
+            old_val = sg.get(grade_key)
             sg.pop(grade_key, None)
-            data_store.save_grades(self._grades)
+            self.grade_changed.emit(student.student_number, grade_key, old_val, None)
             self._rebuilding = True
             self._table.blockSignals(True)
             item.setBackground(QColor(232, 232, 232))
@@ -923,13 +924,14 @@ class GradingPanel(QWidget):
             self._rebuilding = False
             return
 
+        old_val = self._grades.get(student.student_number, {}).get(grade_key)
         if student.student_number not in self._grades:
             self._grades[student.student_number] = {}
         self._grades[student.student_number][grade_key] = val
         # Record this cell as the last focused for this student (subquestions only)
         if not is_bonus:
             self._last_focus[student.student_number] = grade_key
-        self.grade_changed.emit(student.student_number, grade_key, val)
+        self.grade_changed.emit(student.student_number, grade_key, old_val, val)
 
         self._rebuilding = True
         self._table.blockSignals(True)
@@ -1005,6 +1007,51 @@ class GradingPanel(QWidget):
         if (self._current_student is None
                 or student.student_number != self._current_student.student_number):
             self.student_selected.emit(student)
+
+    # ── Programmatic grade update (used by undo/redo) ───────────────────────
+
+    def refresh_student_row(self, student_number: str) -> None:
+        """Re-read grades for *student_number* from the shared grades dict
+        and update the corresponding table row (cells, colours, totals,
+        averages).  Does NOT emit ``grade_changed``."""
+        filtered = self._filtered_students()
+        row = -1
+        student = None
+        for i, s in enumerate(filtered):
+            if s.student_number == student_number:
+                row = _HEADER_ROWS + i
+                student = s
+                break
+        if row < 0 or student is None:
+            return
+        sg = self._grades.get(student_number, {})
+        sq_start = 2
+        self._rebuilding = True
+        self._table.blockSignals(True)
+        for col_idx, sq in enumerate(self._subquestions):
+            val = sg.get(sq.name)
+            item = self._table.item(row, sq_start + col_idx)
+            if item is None:
+                continue
+            item.setText("" if val is None else str(val))
+            if val is not None:
+                color = self._grade_color(val, sq.max_points)
+                if val < 0 or val > sq.max_points:
+                    color = QColor(255, 205, 210)
+                item.setBackground(color)
+            else:
+                item.setBackground(QColor(232, 232, 232))
+        # Bonus/malus column
+        bonus_col = sq_start + len(self._subquestions)
+        bm_val = sg.get(BONUS_MALUS_KEY)
+        bm_item = self._table.item(row, bonus_col)
+        if bm_item is not None:
+            bm_item.setText("" if bm_val is None else str(bm_val))
+            bm_item.setBackground(self._bonus_malus_color(bm_val))
+        self._update_row_totals(row, student)
+        self._fill_average_row(filtered)
+        self._table.blockSignals(False)
+        self._rebuilding = False
 
     # ── Frozen overlay helpers (sticky header rows + Student/Number cols) ─────
 
