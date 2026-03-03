@@ -131,6 +131,8 @@ class MainWindow(QMainWindow):
         self._grading_panel = GradingPanel()
         self._grading_panel.grade_changed.connect(self._on_grade_changed)
         self._grading_panel.student_selected.connect(self._on_student_selected)
+        self._grading_panel.undo_requested.connect(self._undo)
+        self._grading_panel.redo_requested.connect(self._redo)
         self._splitter.addWidget(self._grading_panel)
 
         self._splitter.setSizes([900, 500])
@@ -341,6 +343,17 @@ class MainWindow(QMainWindow):
             sn = action.student_number
             is_current = (self._current_student
                           and self._current_student.student_number == sn)
+
+            # Switch to the correct student so the change is visible.
+            if not is_current:
+                student = next(
+                    (s for s in self._students if s.student_number == sn),
+                    None,
+                )
+                if student:
+                    self._select_student(student)
+                    is_current = True
+
             if is_current:
                 annotations = list(self._pdf_viewer.get_annotations())
             else:
@@ -382,6 +395,14 @@ class MainWindow(QMainWindow):
                 self._pdf_viewer.set_annotations(annotations)
                 self._ann_snapshot = snapshot_annotations(annotations)
 
+            # Navigate to the page of the affected annotation.
+            ann_dict = (action.old_annotation if undo
+                        else action.new_annotation) or (
+                        action.new_annotation if undo
+                        else action.old_annotation)
+            if ann_dict:
+                self._pdf_viewer.show_page(ann_dict.get("page", 0))
+
         elif action.action_type == "grade":
             value = action.old_grade if undo else action.new_grade
             sn = action.student_number
@@ -395,6 +416,7 @@ class MainWindow(QMainWindow):
                 self._grades[sn][key] = value
             data_store.save_grades(self._grades)
             self._grading_panel.refresh_student_row(sn)
+            self._grading_panel.focus_grade_cell(sn, key)
 
     def _compute_student_grade(self, sg: dict, subquestions) -> tuple:
         """Return (total_points, final_grade) for a student's scores dict."""

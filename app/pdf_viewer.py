@@ -698,6 +698,14 @@ class PDFViewerPanel(QWidget):
             self._reset_interaction()
             self._render_page()
 
+    def show_page(self, page_index: int):
+        """Navigate directly to a specific page (0-based)."""
+        if self._doc and 0 <= page_index < self._doc.page_count:
+            if page_index != self._current_page:
+                self._current_page = page_index
+                self._reset_interaction()
+                self._render_page()
+
     # ── Rendering ─────────────────────────────────────────────────────────────
 
     def _page_size(self) -> Tuple[int, int]:

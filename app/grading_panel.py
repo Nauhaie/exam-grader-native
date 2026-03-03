@@ -78,6 +78,8 @@ class _HighlightDelegate(QStyledItemDelegate):
         self._highlight_col: int = -1   # column whose subquestion header is tinted
         self._editor_opened_callback = None  # optional callback(row, col)
         self._editor_closed_callback = None  # optional callback()
+        self._undo_callback = None   # optional callback() for Ctrl+Z in editor
+        self._redo_callback = None   # optional callback() for Ctrl+Shift+Z in editor
 
     def set_highlight_row(self, row: int):
         self._highlight_row = row
@@ -93,6 +95,14 @@ class _HighlightDelegate(QStyledItemDelegate):
         """Set a callback invoked whenever an editor is destroyed."""
         self._editor_closed_callback = callback
 
+    def set_undo_callback(self, callback):
+        """Set a callback invoked when Ctrl+Z is pressed inside a cell editor."""
+        self._undo_callback = callback
+
+    def set_redo_callback(self, callback):
+        """Set a callback invoked when Ctrl+Shift+Z is pressed inside a cell editor."""
+        self._redo_callback = callback
+
     def createEditor(self, parent, option, index):
         editor = super().createEditor(parent, option, index)
         if editor is not None:
@@ -101,6 +111,9 @@ class _HighlightDelegate(QStyledItemDelegate):
                 # Remove the default 1-px frame so the text baseline and
                 # horizontal position match the non-edit cell rendering.
                 editor.setFrame(False)
+            # Intercept Ctrl+Z / Ctrl+Shift+Z so they trigger app-wide
+            # undo/redo instead of the QLineEdit's local text undo.
+            editor.installEventFilter(self)
             if self._editor_opened_callback is not None:
                 self._editor_opened_callback(index.row(), index.column())
         return editor
@@ -109,6 +122,26 @@ class _HighlightDelegate(QStyledItemDelegate):
         super().destroyEditor(editor, index)
         if self._editor_closed_callback is not None:
             self._editor_closed_callback()
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.KeyPress:
+            mods = event.modifiers() & ~Qt.KeyboardModifier.KeypadModifier
+            if event.key() == Qt.Key.Key_Z and mods in (
+                Qt.KeyboardModifier.ControlModifier,
+                Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
+            ):
+                is_redo = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+                cb = self._redo_callback if is_redo else self._undo_callback
+                if cb is not None:
+                    # Commit the current cell value, close the editor,
+                    # then fire the app-wide undo/redo.
+                    self.commitData.emit(obj)
+                    self.closeEditor.emit(
+                        obj, QStyledItemDelegate.EndEditHint.NoHint,
+                    )
+                    QTimer.singleShot(0, cb)
+                return True
+        return super().eventFilter(obj, event)
 
     def paint(self, painter, option: QStyleOptionViewItem, index):
         # Suppress the built-in selection fill so grade colours are not overridden.
@@ -135,8 +168,10 @@ class _HighlightDelegate(QStyledItemDelegate):
 
 
 class GradingPanel(QWidget):
-    grade_changed   = Signal(str, str, object, object)   # student_number, sq_name, old_value, new_value
+    grade_changed    = Signal(str, str, object, object)   # student_number, sq_name, old_value, new_value
     student_selected = Signal(object)            # Student
+    undo_requested   = Signal()
+    redo_requested   = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -198,6 +233,8 @@ class GradingPanel(QWidget):
         self._highlight_delegate = _HighlightDelegate(self._table)
         self._highlight_delegate.set_editor_opened_callback(self._on_cell_editor_opened)
         self._highlight_delegate.set_editor_closed_callback(self._on_cell_editor_closed)
+        self._highlight_delegate.set_undo_callback(self.undo_requested.emit)
+        self._highlight_delegate.set_redo_callback(self.redo_requested.emit)
         self._table.setItemDelegate(self._highlight_delegate)
 
         layout.addWidget(self._table)
@@ -407,6 +444,39 @@ class GradingPanel(QWidget):
         item = self._table.item(row, col)
         if item is not None:
             self._table.editItem(item)
+
+    def focus_grade_cell(self, student_number: str, grade_key: str):
+        """Scroll to and select the specific grade cell identified by
+        *student_number* and *grade_key* (subquestion name or BONUS_MALUS_KEY).
+        Used by undo/redo to make the affected cell visible."""
+        filtered = self._filtered_students()
+        data_row = next(
+            (i for i, s in enumerate(filtered) if s.student_number == student_number),
+            -1,
+        )
+        if data_row < 0 or not self._subquestions:
+            return
+
+        sq_start = 2
+        row = _HEADER_ROWS + data_row
+
+        if grade_key == BONUS_MALUS_KEY:
+            col = sq_start + len(self._subquestions)
+        else:
+            sq_idx = next(
+                (i for i, sq in enumerate(self._subquestions) if sq.name == grade_key),
+                -1,
+            )
+            if sq_idx < 0:
+                return
+            col = sq_start + sq_idx
+
+        self._table.setFocus()
+        self._table.setCurrentCell(row, col)
+        self._table.scrollToItem(
+            self._table.item(row, col),
+            QAbstractItemView.ScrollHint.EnsureVisible,
+        )
 
     def preferred_width(self) -> int:
         """Return the preferred panel width based on current table column widths.
