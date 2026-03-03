@@ -20,7 +20,7 @@ MARKER_RADIUS = 12          # pt at zoom 1 (≈ 4 mm on A4 long side)
 _CHECKMARK_RADIUS = 6       # half of MARKER_RADIUS — checkmarks/crosses are smaller
 _TEXT_FONT_PT = 9
 _TEXT_PAD = 3
-_RESIZE_HANDLE = 8          # side length (pt) of the resize-handle square
+_RESIZE_HANDLE = 6          # side length (pt) of the resize-handle square
 _TEXT_WRAP_MAX_H = 10_000   # generous max-height for word-wrap bound calculation
 
 _RED    = QColor(204, 20, 20, 204)   # colour for lines, arrows, circles (80 % opaque)

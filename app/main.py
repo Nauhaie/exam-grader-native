@@ -9,7 +9,7 @@ from typing import List
 import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -75,8 +75,8 @@ class MainWindow(QMainWindow):
         project_menu = self.menuBar().addMenu("Project")
         settings_action = project_menu.addAction("Settings…")
         settings_action.setMenuRole(QAction.MenuRole.NoRole)
-        # Use the platform-standard Preferences shortcut (Cmd+, on macOS, Ctrl+, elsewhere)
-        settings_action.setShortcut(QKeySequence(QKeySequence.StandardKey.Preferences))
+        # Ctrl+, shows as Cmd+, on macOS and Ctrl+, on Win/Linux (standard, visible in menu)
+        settings_action.setShortcut(QKeySequence("Ctrl+,"))
         settings_action.triggered.connect(self._show_settings)
         project_menu.addSeparator()
         project_menu.addAction("Export Grades as CSV").triggered.connect(self._export_csv)
@@ -113,7 +113,7 @@ class MainWindow(QMainWindow):
         self._grading_panel.student_selected.connect(self._on_student_selected)
         self._splitter.addWidget(self._grading_panel)
 
-        self._splitter.setSizes([600, 800])
+        self._splitter.setSizes([900, 500])
 
     def _load_session(self):
         data_store.dbg("Loading previous session…")
@@ -158,6 +158,8 @@ class MainWindow(QMainWindow):
         self._pdf_viewer.set_hi_dpr(self._grading_settings.hi_dpr)
         self._pdf_viewer.set_preset_annotations(self._preset_annotations)
         self._apply_grading_window_mode()
+        # Defer splitter fit so table column widths are computed first
+        QTimer.singleShot(0, self._fit_splitter_to_table)
         elapsed = time.perf_counter() - t0
         data_store.dbg(f"Project applied successfully: {len(self._students)} student(s) "
                        f"in {elapsed:.3f}s")
@@ -509,6 +511,15 @@ class MainWindow(QMainWindow):
         if 0 <= idx < len(visible) - 1:
             self._select_student(visible[idx + 1])
 
+    def _fit_splitter_to_table(self):
+        """Resize the splitter so the grading panel fits its table content width."""
+        if self._grading_settings.grading_separate_window:
+            return
+        panel_w = self._grading_panel.preferred_width()
+        total = self._splitter.width()
+        pdf_w = max(400, total - panel_w)
+        self._splitter.setSizes([pdf_w, panel_w])
+
     def _apply_grading_window_mode(self):
         """Move the grading panel between the splitter and a separate window."""
         want_separate = self._grading_settings.grading_separate_window
@@ -528,7 +539,7 @@ class MainWindow(QMainWindow):
             # Re-attach to splitter
             self._grading_panel.setParent(None)
             self._splitter.addWidget(self._grading_panel)
-            self._splitter.setSizes([600, 800])
+            QTimer.singleShot(0, self._fit_splitter_to_table)
             self._grading_window.close()
             self._grading_window = None
 
